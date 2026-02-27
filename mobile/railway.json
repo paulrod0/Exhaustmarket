@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "npx expo start --tunnel --non-interactive --max-workers 2",
+    "startCommand": "npx expo start --tunnel --max-workers 2",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 5
   }
