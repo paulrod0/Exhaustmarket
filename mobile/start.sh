@@ -5,8 +5,8 @@ export CI=false
 
 echo "=== Starting Expo tunnel server ==="
 
-# Start expo in background
-npx expo start --tunnel --max-workers 2 &
+# Start expo in background with stdin from /dev/null to avoid SIGTTIN
+npx expo start --tunnel --max-workers 2 </dev/null &
 EXPO_PID=$!
 
 echo "Expo PID: $EXPO_PID"
