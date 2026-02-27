@@ -29,32 +29,14 @@ console.log(`  exp://${PUBLIC_HOST}`);
 console.log('============================================');
 
 // ── Reescribir URLs del manifest JSON ───────────────────────
+// Expo SDK 50+ usa "New Manifest" con launchAsset.url (no bundleUrl).
+// La URL ya llega como https:// — solo hay que eliminar :METRO_PORT.
+//
+// Ejemplo:  "https://host:8082/bundle"  →  "https://host/bundle"
+// Cubre TODOS los campos del manifest sin parsear JSON.
 function rewriteManifest(body) {
-  try {
-    const m = JSON.parse(body);
-
-    const fixUrl = (s) =>
-      s
-        ? s.replace(
-            new RegExp(`https?://[^/?#]+:${METRO_PORT}`, 'g'),
-            `https://${PUBLIC_HOST}`
-          )
-        : s;
-
-    const fixHost = (s) =>
-      s ? s.replace(new RegExp(`[^:]+:${METRO_PORT}`, 'g'), PUBLIC_HOST) : s;
-
-    if (m.bundleUrl)     m.bundleUrl     = fixUrl(m.bundleUrl);
-    if (m.mainModuleUrl) m.mainModuleUrl = fixUrl(m.mainModuleUrl);
-    if (m.logUrl)        m.logUrl        = fixUrl(m.logUrl);
-    if (m.debuggerHost)  m.debuggerHost  = fixHost(m.debuggerHost);
-    if (m.hostUri)       m.hostUri       = fixHost(m.hostUri);
-
-    return JSON.stringify(m);
-  } catch {
-    // Si no es JSON válido, eliminar el puerto como fallback
-    return body.replace(new RegExp(`:${METRO_PORT}`, 'g'), '');
-  }
+  // Quita :METRO_PORT cuando va seguido de / " o ? (delimitadores de URL/JSON)
+  return body.replace(new RegExp(`:${METRO_PORT}(?=[/"?])`, 'g'), '');
 }
 
 // ── Iniciar Metro ────────────────────────────────────────────
