@@ -1,59 +1,137 @@
-import { useEffect, useState } from 'react'
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native'
+import { useEffect, useState, useCallback } from 'react'
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  ActivityIndicator,
+} from 'react-native'
+import * as WebBrowser from 'expo-web-browser'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+interface SubscriptionTier {
+  id: string
+  name: string
+  price_monthly: number
+  price_yearly: number
+  features: string[]
+  active: boolean
+}
+
+// ─── Screen ─────────────────────────────────────────────────────────────────
+
 export default function SubscriptionsScreen() {
-  const { profile } = useAuthStore()
-  const [tiers, setTiers] = useState<any[]>([])
+  const { profile, fetchProfile } = useAuthStore()
+  const [tiers, setTiers] = useState<SubscriptionTier[]>([])
   const [loading, setLoading] = useState(true)
+  const [subscribingId, setSubscribingId] = useState<string | null>(null)
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'yearly'>('monthly')
 
   useEffect(() => {
     fetchTiers()
   }, [])
 
-  const fetchTiers = async () => {
+  const fetchTiers = useCallback(async () => {
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('subscription_tiers')
         .select('*')
         .eq('active', true)
         .order('price_monthly', { ascending: true })
 
-      setTiers(data || [])
+      if (error) throw error
+      setTiers((data as SubscriptionTier[]) ?? [])
     } catch (error) {
       console.error('Error fetching tiers:', error)
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const handleSubscribe = (tierName: string) => {
-    Alert.alert(
-      'Configurar Stripe',
-      'Para suscribirte, necesitas configurar Stripe.\n\nVisita: https://bolt.new/setup/stripe',
-      [{ text: 'OK' }]
-    )
-  }
+  // ─── Stripe Checkout ──────────────────────────────────────────────────────
+
+  const handleSubscribe = useCallback(
+    async (tier: SubscriptionTier) => {
+      if (tier.price_monthly === 0) {
+        Alert.alert('Plan Gratuito', 'Ya tienes acceso al plan Standard de forma gratuita.')
+        return
+      }
+
+      try {
+        setSubscribingId(tier.id)
+
+        // Get current Supabase session JWT
+        const {
+          data: { session },
+          error: sessionErr,
+        } = await supabase.auth.getSession()
+        if (sessionErr || !session) throw new Error('No hay sesión activa. Inicia sesión.')
+
+        const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL!
+        const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!
+
+        // Call Edge Function to create Stripe Checkout Session
+        const res = await fetch(`${supabaseUrl}/functions/v1/create-checkout-session`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            apikey: anonKey,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ tier_id: tier.id, billing_cycle: billingCycle }),
+        })
+
+        const json = await res.json()
+        if (!res.ok || json.error) {
+          throw new Error(json.error ?? 'Error al crear la sesión de pago')
+        }
+
+        // Open Stripe Checkout in an in-app browser
+        // openBrowserAsync resolves when the user closes the browser
+        await WebBrowser.openBrowserAsync(json.url, {
+          presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+          showTitle: false,
+        })
+
+        // Refresh profile — if webhook was fast, user_type will already be updated
+        await fetchProfile()
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Error inesperado'
+        Alert.alert('Error al suscribirse', message)
+      } finally {
+        setSubscribingId(null)
+      }
+    },
+    [billingCycle, fetchProfile],
+  )
+
+  // ─── Render ───────────────────────────────────────────────────────────────
 
   if (loading) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.loadingText}>Cargando planes...</Text>
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#0071E3" />
       </View>
     )
   }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Elige tu Plan</Text>
         <Text style={styles.subtitle}>
-          Tu plan actual: <Text style={styles.currentPlan}>{profile?.user_type}</Text>
+          Plan actual:{' '}
+          <Text style={styles.currentPlan}>{profile?.user_type ?? '—'}</Text>
         </Text>
       </View>
 
+      {/* Billing cycle toggle */}
       <View style={styles.billingToggle}>
         <View style={styles.billingToggleInner}>
           <TouchableOpacity
@@ -71,17 +149,20 @@ export default function SubscriptionsScreen() {
             activeOpacity={0.7}
           >
             <Text style={[styles.toggleText, billingCycle === 'yearly' && styles.toggleTextActive]}>
-              Anual (17%)
+              Anual&nbsp;(−17%)
             </Text>
           </TouchableOpacity>
         </View>
       </View>
 
+      {/* Plan cards */}
       <View style={styles.plans}>
         {tiers.map((tier) => {
-          const price = billingCycle === 'monthly' ? tier.price_monthly : tier.price_yearly
+          const price =
+            billingCycle === 'monthly' ? tier.price_monthly : tier.price_yearly
           const isPremium = tier.name === 'premium'
           const isCurrentPlan = profile?.user_type === tier.name
+          const isLoading = subscribingId === tier.id
 
           return (
             <View
@@ -95,19 +176,24 @@ export default function SubscriptionsScreen() {
               )}
 
               <Text style={styles.planName}>{tier.name}</Text>
+
               <Text style={styles.planPrice}>
-                {price === 0 ? 'Gratis' : `\u20AC${price.toFixed(2)}`}
-                {price > 0 && (
-                  <Text style={styles.planPeriod}>
-                    /{billingCycle === 'monthly' ? 'mes' : 'ano'}
-                  </Text>
+                {price === 0 ? (
+                  'Gratis'
+                ) : (
+                  <>
+                    {`€${Number(price).toFixed(2)}`}
+                    <Text style={styles.planPeriod}>
+                      {billingCycle === 'monthly' ? '/mes' : '/año'}
+                    </Text>
+                  </>
                 )}
               </Text>
 
               <View style={styles.featuresList}>
-                {(tier.features as string[]).map((feature: string, index: number) => (
-                  <View key={index} style={styles.featureItem}>
-                    <Text style={styles.featureCheck}>{'\u2713'}</Text>
+                {(tier.features as string[]).map((feature, idx) => (
+                  <View key={idx} style={styles.featureItem}>
+                    <Text style={styles.featureCheck}>✓</Text>
                     <Text style={styles.featureText}>{feature}</Text>
                   </View>
                 ))}
@@ -119,26 +205,38 @@ export default function SubscriptionsScreen() {
                   isCurrentPlan && styles.subscribeButtonDisabled,
                   isPremium && !isCurrentPlan && styles.subscribeButtonPremium,
                 ]}
-                onPress={() => handleSubscribe(tier.name)}
-                disabled={isCurrentPlan}
-                activeOpacity={0.7}
+                onPress={() => handleSubscribe(tier)}
+                disabled={isCurrentPlan || !!subscribingId}
+                activeOpacity={0.75}
               >
-                <Text
-                  style={[
-                    styles.subscribeButtonText,
-                    isCurrentPlan && styles.subscribeButtonTextDisabled,
-                  ]}
-                >
-                  {isCurrentPlan ? 'Plan Actual' : 'Suscribirse'}
-                </Text>
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <Text
+                    style={[
+                      styles.subscribeButtonText,
+                      isCurrentPlan && styles.subscribeButtonTextDisabled,
+                    ]}
+                  >
+                    {isCurrentPlan ? 'Plan Actual' : 'Suscribirse'}
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           )
         })}
       </View>
+
+      {/* Footer note */}
+      <Text style={styles.footerNote}>
+        Los pagos son procesados de forma segura por Stripe.{'\n'}
+        Cancela en cualquier momento.
+      </Text>
     </ScrollView>
   )
 }
+
+// ─── Styles ──────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
@@ -146,13 +244,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
   },
   contentContainer: {
-    paddingBottom: 40,
+    paddingBottom: 48,
   },
-  loadingText: {
-    color: '#86868B',
-    textAlign: 'center',
-    marginTop: 50,
-    fontSize: 16,
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
   header: {
     paddingHorizontal: 24,
@@ -190,7 +288,7 @@ const styles = StyleSheet.create({
   toggleButton: {
     flex: 1,
     paddingVertical: 10,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     borderRadius: 980,
     alignItems: 'center',
   },
@@ -286,10 +384,12 @@ const styles = StyleSheet.create({
   },
   subscribeButton: {
     backgroundColor: '#0071E3',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 24,
     borderRadius: 980,
     alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
   },
   subscribeButtonPremium: {
     backgroundColor: '#0071E3',
@@ -304,5 +404,13 @@ const styles = StyleSheet.create({
   },
   subscribeButtonTextDisabled: {
     color: '#86868B',
+  },
+  footerNote: {
+    marginTop: 28,
+    marginHorizontal: 24,
+    textAlign: 'center',
+    color: '#AEAEB2',
+    fontSize: 13,
+    lineHeight: 20,
   },
 })
