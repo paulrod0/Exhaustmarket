@@ -1,5 +1,17 @@
 #!/bin/sh
-# Minimal start script - exec expo as main process with CI=false
+# Usa localtunnel en lugar de ngrok → URL estable que no cambia al reiniciar
 export CI=false
-echo "=== Starting Expo (exec mode, CI=false) ==="
-exec npx expo start --tunnel --max-workers 2
+export REACT_NATIVE_PACKAGER_HOSTNAME=exhaustmarket-expo.loca.lt
+
+echo "=== Iniciando localtunnel (reemplaza ngrok) ==="
+./node_modules/.bin/lt --port 8081 --subdomain exhaustmarket-expo &
+
+# Espera a que localtunnel conecte
+sleep 5
+
+echo "============================================"
+echo "  ABRE EN EXPO GO con esta URL estable:"
+echo "  exp://exhaustmarket-expo.loca.lt"
+echo "============================================"
+
+exec npx expo start --port 8081 --max-workers 2
