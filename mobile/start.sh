@@ -1,17 +1,12 @@
 #!/bin/sh
-# Usa localtunnel en lugar de ngrok → URL estable que no cambia al reiniciar
+# Railway hace el proxy HTTPS directamente a Metro en puerto 8081
+# No necesitamos ngrok ni localtunnel — la URL de Railway es permanente
 export CI=false
-export REACT_NATIVE_PACKAGER_HOSTNAME=exhaustmarket-expo.loca.lt
-
-echo "=== Iniciando localtunnel (reemplaza ngrok) ==="
-./node_modules/.bin/lt --port 8081 --subdomain exhaustmarket-expo &
-
-# Espera a que localtunnel conecte
-sleep 5
+export REACT_NATIVE_PACKAGER_HOSTNAME=exhaustmarket-production.up.railway.app
 
 echo "============================================"
-echo "  ABRE EN EXPO GO con esta URL estable:"
-echo "  exp://exhaustmarket-expo.loca.lt"
+echo "  ABRE EN EXPO GO con esta URL (permanente):"
+echo "  exp://exhaustmarket-production.up.railway.app"
 echo "============================================"
 
 exec npx expo start --port 8081 --max-workers 2
