@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "AutoMarket",
+    "slug": "automarket-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0f172a"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.automarket.app"
+    },
+    "android": {
+      "package": "com.automarket.app"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}
