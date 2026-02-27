@@ -18,9 +18,9 @@ const http = require('http');
 const net  = require('net');
 const { spawn } = require('child_process');
 
-const PUBLIC_HOST = 'exhaustmarket-production.up.railway.app';
+const PUBLIC_HOST = process.env.PUBLIC_HOST || 'exhaustmarket-production.up.railway.app';
 const METRO_PORT  = 8082;   // Puerto INTERNO de Metro
-const PROXY_PORT  = 8081;   // Puerto que Railway expone públicamente
+const PROXY_PORT  = process.env.PORT || 8081;   // Puerto que el host expone públicamente
 
 // ── URL estable para los beta testers ────────────────────────
 console.log('============================================');
@@ -90,7 +90,9 @@ waitForMetro().then(() => {
 
     const pr = http.request(opts, (mr) => {
       const ct = mr.headers['content-type'] || '';
-      const isManifest = ct.includes('json') || ct.includes('expo');
+      // Expo SDK 50+ usa multipart/mixed para el "New Manifest Format".
+      // También capturamos application/json (classic) y application/expo+json.
+      const isManifest = ct.includes('json') || ct.includes('expo') || ct.includes('multipart');
 
       if (isManifest) {
         // Interceptar y reescribir el manifest
