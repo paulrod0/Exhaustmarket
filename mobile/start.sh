@@ -2,7 +2,6 @@
 # Start Expo with CI=false and print the tunnel URL to stdout
 
 export CI=false
-export EXPO_NO_INTERACTIVE=1
 
 echo "=== Starting Expo tunnel server ==="
 
