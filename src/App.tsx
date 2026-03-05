@@ -14,6 +14,7 @@ import SubscriptionsPage from './pages/SubscriptionsPage'
 import QuotesPage from './pages/QuotesPage'
 import Design3DPage from './pages/Design3DPage'
 import ManualsPage from './pages/ManualsPage'
+import PaymentResultPage from './pages/PaymentResultPage'
 import PanelDashboardPage from './pages/panel/PanelDashboardPage'
 import PanelProductsPage from './pages/panel/PanelProductsPage'
 import PanelOrdersPage from './pages/panel/PanelOrdersPage'
@@ -58,6 +59,7 @@ function App() {
           <Route path="quotes" element={<ProtectedRoute><QuotesPage /></ProtectedRoute>} />
           <Route path="designs" element={<ProtectedRoute><Design3DPage /></ProtectedRoute>} />
           <Route path="manuals" element={<ProtectedRoute><ManualsPage /></ProtectedRoute>} />
+          <Route path="payment-result" element={<PaymentResultPage />} />
         </Route>
         <Route path="panel" element={<PanelGuard><PanelLayout /></PanelGuard>}>
           <Route index element={<PanelDashboardPage />} />
