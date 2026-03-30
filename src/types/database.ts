@@ -541,7 +541,14 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
-        Update: Partial<Database['public']['Tables']['supplier_api_keys']['Insert']>
+        Update: Partial<{
+          name: string
+          key_prefix: string
+          key_hash: string
+          is_active: boolean
+          last_used_at: string | null
+          updated_at: string
+        }>
       }
       supplier_sync_logs: {
         Row: {
@@ -558,8 +565,33 @@ export interface Database {
           started_at: string
           completed_at: string | null
         }
-        Insert: Omit<Database['public']['Tables']['supplier_sync_logs']['Row'], 'id'>
-        Update: Partial<Database['public']['Tables']['supplier_sync_logs']['Insert']>
+        Insert: {
+          id?: string
+          user_id: string
+          api_key_id?: string | null
+          action: 'full_sync' | 'upsert' | 'delete'
+          status: 'success' | 'error'
+          products_created?: number
+          products_updated?: number
+          products_deleted?: number
+          error_message?: string | null
+          source_platform?: string | null
+          started_at?: string
+          completed_at?: string | null
+        }
+        Update: Partial<{
+          user_id: string
+          api_key_id: string | null
+          action: 'full_sync' | 'upsert' | 'delete'
+          status: 'success' | 'error'
+          products_created: number
+          products_updated: number
+          products_deleted: number
+          error_message: string | null
+          source_platform: string | null
+          started_at: string
+          completed_at: string | null
+        }>
       }
     }
   }

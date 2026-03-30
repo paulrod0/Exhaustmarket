@@ -15,12 +15,10 @@ export interface SupplierProduct {
 
 export type SyncAction = 'full_sync' | 'upsert' | 'delete'
 
-export interface SyncRequest {
-  action: SyncAction
-  products?: SupplierProduct[]  // for full_sync and upsert
-  ref?: string                  // for delete (single product)
-  source_platform?: string
-}
+export type SyncRequest =
+  | { action: 'full_sync'; products: SupplierProduct[]; source_platform?: string }
+  | { action: 'upsert';    products: SupplierProduct[]; source_platform?: string }
+  | { action: 'delete';    ref: string;                 source_platform?: string }
 
 export interface SyncResponse {
   success: boolean
