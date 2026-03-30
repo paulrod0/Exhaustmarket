@@ -20,7 +20,7 @@ interface SupplierState {
   clearNewKey: () => void
 }
 
-export const useSupplierStore = create<SupplierState>((set) => ({
+export const useSupplierStore = create<SupplierState>((set, get) => ({
   apiKeys: [],
   syncLogs: [],
   loading: false,
@@ -29,75 +29,84 @@ export const useSupplierStore = create<SupplierState>((set) => ({
 
   fetchApiKeys: async () => {
     set({ loading: true, error: null })
-    const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/supplier-keys`,
-      { headers: { Authorization: `Bearer ${session?.access_token}` } }
-    )
-    const json = await res.json()
-    if (!res.ok) {
-      set({ loading: false, error: json.error })
-      return
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { set({ loading: false }); return }
+
+      const { data, error } = await supabase.functions.invoke('supplier-keys', {
+        method: 'GET',
+      })
+      if (error) { set({ error: error.message, loading: false }); return }
+      set({ apiKeys: data?.keys ?? [], loading: false })
+    } catch (err: any) {
+      set({ loading: false, error: err.message ?? 'Error' })
     }
-    set({ apiKeys: json.keys, loading: false })
   },
 
   generateApiKey: async (name: string) => {
     set({ loading: true, error: null })
-    const { data: { session } } = await supabase.auth.getSession()
-    const res = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/supplier-keys`,
-      {
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { set({ loading: false }); return null }
+
+      const { data, error } = await supabase.functions.invoke('supplier-keys', {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session?.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ action: 'generate', name }),
-      }
-    )
-    const json = await res.json()
-    if (!res.ok) {
-      set({ loading: false, error: json.error })
+        body: { action: 'generate', name },
+      })
+      if (error) { set({ error: error.message, loading: false }); return null }
+
+      const { full_key, ...keyData } = data
+      set(state => ({
+        apiKeys: [keyData, ...state.apiKeys],
+        newlyGeneratedKey: full_key,
+        loading: false,
+      }))
+      return data as GeneratedApiKey
+    } catch (err: any) {
+      set({ loading: false, error: err.message ?? 'Error' })
       return null
     }
-    const { full_key, ...keyData } = json
-    set(state => ({
-      apiKeys: [keyData, ...state.apiKeys],
-      newlyGeneratedKey: full_key,
-      loading: false,
-    }))
-    return json as GeneratedApiKey
   },
 
   revokeApiKey: async (id: string) => {
     set({ loading: true, error: null })
-    const { data: { session } } = await supabase.auth.getSession()
-    await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/supplier-keys`,
-      {
+    // Keep snapshot for rollback on error
+    const snapshot = get().apiKeys
+    // Optimistic delete
+    set(state => ({ apiKeys: state.apiKeys.filter(k => k.id !== id) }))
+    try {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { set({ apiKeys: snapshot, loading: false }); return }
+
+      const { error } = await supabase.functions.invoke('supplier-keys', {
         method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${session?.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ id }),
+        body: { id },
+      })
+      if (error) {
+        // Restore snapshot on failure
+        set({ apiKeys: snapshot, error: error.message, loading: false })
+        return
       }
-    )
-    set(state => ({
-      apiKeys: state.apiKeys.filter(k => k.id !== id),
-      loading: false,
-    }))
+      set({ loading: false })
+    } catch (err: any) {
+      set({ apiKeys: snapshot, loading: false, error: err.message ?? 'Error' })
+    }
   },
 
   fetchSyncLogs: async () => {
-    const { data, error } = await supabase
-      .from('supplier_sync_logs')
-      .select('*')
-      .order('started_at', { ascending: false })
-      .limit(50)
+    set({ loading: true, error: null })
+    try {
+      const { data, error } = await supabase
+        .from('supplier_sync_logs')
+        .select('*')
+        .order('started_at', { ascending: false })
+        .limit(50)
 
-    if (!error) set({ syncLogs: data ?? [] })
+      if (error) { set({ loading: false, error: error.message }); return }
+      set({ syncLogs: data ?? [], loading: false })
+    } catch (err: any) {
+      set({ loading: false, error: err.message ?? 'Error' })
+    }
   },
 
   clearNewKey: () => set({ newlyGeneratedKey: null }),
