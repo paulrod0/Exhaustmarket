@@ -12,6 +12,12 @@ serve(async (req) => {
     return new Response('ok', { headers: corsHeaders })
   }
 
+  // Bug 3 fix: declare variables outside try so they're accessible in catch
+  let supabase: any
+  let apiKey: any
+  let body: any
+  let startedAt: string
+
   try {
     // ── 1. Extract Bearer token ──────────────────────────────────────
     const authHeader = req.headers.get('Authorization') ?? ''
@@ -23,16 +29,18 @@ serve(async (req) => {
     // ── 2. Hash the token and look up the API key ────────────────────
     const keyHash = await sha256(token)
 
-    const supabase = createClient(
+    supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    const { data: apiKey, error: keyError } = await supabase
+    const { data: apiKeyData, error: keyError } = await supabase
       .from('supplier_api_keys')
       .select('id, user_id, is_active')
       .eq('key_hash', keyHash)
       .single()
+
+    apiKey = apiKeyData
 
     if (keyError || !apiKey) {
       return json({ error: 'Invalid API key' }, 401)
@@ -49,14 +57,14 @@ serve(async (req) => {
       .eq('id', apiKey.id)
 
     // ── 3. Parse body ────────────────────────────────────────────────
-    const body = await req.json()
+    body = await req.json()
     const { action, products, ref, source_platform } = body
 
     if (!action) {
       return json({ error: 'Missing action field' }, 400)
     }
 
-    const startedAt = new Date().toISOString()
+    startedAt = new Date().toISOString()
     let created = 0, updated = 0, deleted = 0
 
     // ── 4. Execute action ────────────────────────────────────────────
@@ -78,31 +86,43 @@ serve(async (req) => {
         if (existing) {
           await supabase
             .from('professional_products')
+            // Bug 2 fix: spread row (no id field) + override updated_at
             .update({ ...row, updated_at: new Date().toISOString() })
             .eq('id', existing.id)
           updated++
         } else {
-          await supabase.from('professional_products').insert(row)
+          // Bug 2 fix: add id only at insert time
+          await supabase.from('professional_products').insert({ id: crypto.randomUUID(), ...row })
           created++
         }
       }
 
-      // Delete products NOT in the new list
+      // Bug 1 fix: safe ID-based deletion; no-op when refs is empty
       const refs = products.map((p: any) => p.ref)
-      const { data: toDelete } = await supabase
-        .from('professional_products')
-        .select('id')
-        .eq('professional_id', apiKey.user_id)
-        .not('external_ref', 'is', null)
-        .not('external_ref', 'in', `(${refs.map((r: string) => `"${r}"`).join(',')})`)
-
-      if (toDelete?.length) {
-        await supabase
+      if (refs.length > 0) {
+        // Fetch all currently synced product IDs for this supplier
+        const { data: allSynced } = await supabase
           .from('professional_products')
-          .delete()
-          .in('id', toDelete.map((r: any) => r.id))
-        deleted = toDelete.length
+          .select('id, external_ref')
+          .eq('professional_id', apiKey.user_id)
+          .not('external_ref', 'is', null)
+
+        if (allSynced?.length) {
+          const refSet = new Set(refs)
+          const idsToDelete = allSynced
+            .filter((row: any) => !refSet.has(row.external_ref))
+            .map((row: any) => row.id)
+
+          if (idsToDelete.length > 0) {
+            await supabase
+              .from('professional_products')
+              .delete()
+              .in('id', idsToDelete)
+            deleted = idsToDelete.length
+          }
+        }
       }
+      // If refs is empty, do NOT delete anything (empty full_sync = no-op for deletions)
 
     } else if (action === 'upsert') {
       const list = Array.isArray(products) ? products : [products]
@@ -118,11 +138,13 @@ serve(async (req) => {
         if (existing) {
           await supabase
             .from('professional_products')
+            // Bug 2 fix: spread row (no id field) + override updated_at
             .update({ ...row, updated_at: new Date().toISOString() })
             .eq('id', existing.id)
           updated++
         } else {
-          await supabase.from('professional_products').insert(row)
+          // Bug 2 fix: add id only at insert time
+          await supabase.from('professional_products').insert({ id: crypto.randomUUID(), ...row })
           created++
         }
       }
@@ -165,6 +187,19 @@ serve(async (req) => {
 
   } catch (err: any) {
     console.error(err)
+    // Bug 3 fix: attempt to log the error (best effort, don't await)
+    try {
+      if (typeof apiKey !== 'undefined') {
+        supabase?.from('supplier_sync_logs').insert({
+          user_id: apiKey.user_id,
+          api_key_id: apiKey.id,
+          action: body?.action ?? 'unknown',
+          status: 'error',
+          error_message: err.message ?? 'Internal error',
+          started_at: startedAt ?? new Date().toISOString(),
+        })
+      }
+    } catch { /* ignore */ }
     return json({ error: err.message ?? 'Internal error' }, 500)
   }
 })
@@ -178,9 +213,9 @@ function json(body: unknown, status = 200) {
   })
 }
 
+// Bug 2 fix: productToRow no longer returns id (added at insert time only)
 function productToRow(p: any, userId: string, platform?: string) {
   return {
-    id: crypto.randomUUID(),
     professional_id: userId,
     product_name: p.name,
     description: p.description ?? '',
