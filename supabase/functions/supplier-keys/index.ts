@@ -34,7 +34,7 @@ serve(async (req) => {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
-    if (error) return json({ error: error.message }, 500)
+    if (error) return json({ error: 'Failed to fetch API keys' }, 500)
     return json({ keys: data })
   }
 
