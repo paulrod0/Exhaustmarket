@@ -5,6 +5,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, content-type',
+  'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
 }
 
 serve(async (req) => {
@@ -18,10 +19,6 @@ serve(async (req) => {
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_ANON_KEY')!,
     { global: { headers: { Authorization: authHeader } } }
-  )
-  const serviceSupabase = createClient(
-    Deno.env.get('SUPABASE_URL')!,
-    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
   )
 
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -48,6 +45,9 @@ serve(async (req) => {
     if (!body.name?.trim()) {
       return json({ error: 'Key name is required' }, 400)
     }
+    if (body.name.trim().length > 100) {
+      return json({ error: 'Key name must be 100 characters or less' }, 400)
+    }
 
     // Count existing active keys (limit 10)
     const { count } = await supabase
@@ -60,12 +60,17 @@ serve(async (req) => {
       return json({ error: 'Maximum 10 active API keys allowed' }, 400)
     }
 
+    const serviceSupabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+
     // Generate cryptographically random key: em_live_ + 64 hex chars
     const randomBytes = new Uint8Array(32)
     crypto.getRandomValues(randomBytes)
     const randomHex = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('')
     const fullKey = `em_live_${randomHex}`
-    const keyPrefix = fullKey.substring(0, 16) + '...' // Display prefix
+    const keyPrefix = 'em_live_...'
 
     // Hash the full key for storage
     const keyHash = await sha256(fullKey)
@@ -82,21 +87,37 @@ serve(async (req) => {
       .select('id, name, key_prefix, is_active, created_at')
       .single()
 
-    if (error) return json({ error: error.message }, 500)
+    if (error) {
+      const msg = error.code === '23505'
+        ? 'Key generation failed (hash collision), please retry'
+        : 'Failed to create API key'
+      return json({ error: msg }, 500)
+    }
 
     // Return full key only once
     return json({ ...data, full_key: fullKey }, 201)
   }
 
   // DELETE — revoke key
-  if (req.method === 'DELETE' && body.id) {
-    const { error } = await supabase
+  if (req.method === 'DELETE') {
+    if (!body.id || typeof body.id !== 'string') {
+      return json({ error: 'id is required' }, 400)
+    }
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    if (!uuidRegex.test(body.id)) {
+      return json({ error: 'Invalid id format' }, 400)
+    }
+
+    const { data, error } = await supabase
       .from('supplier_api_keys')
       .update({ is_active: false, updated_at: new Date().toISOString() })
       .eq('id', body.id)
       .eq('user_id', user.id)
+      .select('id')
 
-    if (error) return json({ error: error.message }, 500)
+    if (error) return json({ error: 'Failed to revoke key' }, 500)
+    if (!data || data.length === 0) return json({ error: 'Key not found' }, 404)
     return json({ success: true })
   }
 
