@@ -14,11 +14,13 @@ import SubscriptionsPage from './pages/SubscriptionsPage'
 import QuotesPage from './pages/QuotesPage'
 import Design3DPage from './pages/Design3DPage'
 import ManualsPage from './pages/ManualsPage'
+import PaymentResultPage from './pages/PaymentResultPage'
 import PanelDashboardPage from './pages/panel/PanelDashboardPage'
 import PanelProductsPage from './pages/panel/PanelProductsPage'
 import PanelOrdersPage from './pages/panel/PanelOrdersPage'
 import PanelInvoicesPage from './pages/panel/PanelInvoicesPage'
 import PanelCatalogSyncPage from './pages/panel/PanelCatalogSyncPage'
+import PanelApiKeysPage from './pages/panel/PanelApiKeysPage'
 
 function App() {
   const { setUser, setLoading, fetchProfile } = useAuthStore()
@@ -58,6 +60,7 @@ function App() {
           <Route path="quotes" element={<ProtectedRoute><QuotesPage /></ProtectedRoute>} />
           <Route path="designs" element={<ProtectedRoute><Design3DPage /></ProtectedRoute>} />
           <Route path="manuals" element={<ProtectedRoute><ManualsPage /></ProtectedRoute>} />
+          <Route path="payment-result" element={<PaymentResultPage />} />
         </Route>
         <Route path="panel" element={<PanelGuard><PanelLayout /></PanelGuard>}>
           <Route index element={<PanelDashboardPage />} />
@@ -65,6 +68,7 @@ function App() {
           <Route path="orders" element={<PanelOrdersPage />} />
           <Route path="invoices" element={<PanelInvoicesPage />} />
           <Route path="catalog-sync" element={<PanelCatalogSyncPage />} />
+          <Route path="api-keys" element={<PanelApiKeysPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
