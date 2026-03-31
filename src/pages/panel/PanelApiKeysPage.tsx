@@ -16,7 +16,8 @@ export default function PanelApiKeysPage() {
   useEffect(() => {
     fetchApiKeys()
     fetchSyncLogs()
-  }, [fetchApiKeys, fetchSyncLogs])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Zustand actions are stable refs — run once on mount
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault()
