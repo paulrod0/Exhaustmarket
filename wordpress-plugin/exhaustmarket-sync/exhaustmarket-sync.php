@@ -112,6 +112,9 @@ function em_sync_on_product_save( $product_id ) {
     $product = wc_get_product( $product_id );
     if ( ! $product ) return;
 
+    // Only sync published products — drafts/private should not appear on ExhaustMarket
+    if ( $product->get_status() !== 'publish' ) return;
+
     $result = em_sync_send( 'upsert', [ em_product_to_payload( $product ) ] );
 
     // Store per-product sync result
@@ -140,20 +143,47 @@ function em_sync_on_product_delete( $product_id ) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function em_sync_full_catalog() {
-    $products_raw = wc_get_products([
-        'status' => 'publish',
-        'limit'  => -1,
-    ]);
+    $page    = 1;
+    $created = 0;
+    $updated = 0;
+    $deleted = 0;
+    $last_error = null;
 
-    $products = array_map( 'em_product_to_payload', $products_raw );
+    do {
+        $products_raw = wc_get_products([
+            'status' => 'publish',
+            'limit'  => 100,
+            'page'   => $page,
+        ]);
 
-    $result = em_sync_send( 'full_sync', $products );
+        if ( empty( $products_raw ) ) break;
 
-    if ( isset( $result['success'] ) && $result['success'] ) {
-        update_option( 'em_sync_last_full', current_time( 'mysql' ) );
+        $products = array_map( 'em_product_to_payload', $products_raw );
+        $result   = em_sync_send( 'full_sync', $products );
+
+        if ( isset( $result['success'] ) && $result['success'] ) {
+            $created += (int) ( $result['products_created'] ?? 0 );
+            $updated += (int) ( $result['products_updated'] ?? 0 );
+            $deleted += (int) ( $result['products_deleted'] ?? 0 );
+        } else {
+            $last_error = $result['error'] ?? 'Unknown error';
+        }
+
+        $page++;
+    } while ( count( $products_raw ) === 100 );
+
+    if ( $last_error ) {
+        return [ 'success' => false, 'error' => $last_error ];
     }
 
-    return $result;
+    update_option( 'em_sync_last_full', current_time( 'mysql' ) );
+
+    return [
+        'success'          => true,
+        'products_created' => $created,
+        'products_updated' => $updated,
+        'products_deleted' => $deleted,
+    ];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -196,13 +226,15 @@ function em_product_to_payload( WC_Product $product ): array {
         $images[] = wp_get_attachment_url( $gid );
     }
 
+    $terms = wp_get_post_terms( $product->get_id(), 'product_cat', [ 'fields' => 'names' ] );
+
     return [
         'ref'             => 'WC-' . $product->get_id(),
         'name'            => $product->get_name(),
         'description'     => wp_strip_all_tags( $product->get_short_description() ?: $product->get_description() ),
         'price'           => (float) $product->get_price(),
         'stock'           => $product->get_stock_quantity() ?? 0,
-        'category'        => implode( ' > ', wp_get_post_terms( $product->get_id(), 'product_cat', [ 'fields' => 'names' ] ) ),
+        'category'        => is_wp_error( $terms ) ? '' : implode( ' > ', $terms ),
         'images'          => array_filter( $images ),
         'active'          => $product->is_visible(),
         'source_platform' => 'woocommerce',
@@ -217,6 +249,15 @@ function em_sync_send( string $action, array $products ): array {
     ]);
 }
 
+/**
+ * Sends a raw body to the ExhaustMarket supplier-sync API.
+ *
+ * Expected shapes:
+ *   upsert/full_sync: { action, products: [...], source_platform }
+ *   delete:           { action: 'delete', ref: 'WC-{id}', source_platform }
+ *
+ * The 'delete' shape does NOT use a 'products' key — it sends a single 'ref' string.
+ */
 function em_sync_send_raw( array $body ): array {
     $api_key = get_option( 'em_sync_api_key', '' );
     if ( ! $api_key ) return [ 'success' => false, 'error' => 'No API key configured' ];
