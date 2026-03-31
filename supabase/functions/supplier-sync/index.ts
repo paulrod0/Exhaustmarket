@@ -1,0 +1,244 @@
+// supabase/functions/supplier-sync/index.ts
+import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, content-type',
+}
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders })
+  }
+
+  // Bug 3 fix: declare variables outside try so they're accessible in catch
+  let supabase: any
+  let apiKey: any
+  let body: any
+  let startedAt: string
+
+  try {
+    // ── 1. Extract Bearer token ──────────────────────────────────────
+    const authHeader = req.headers.get('Authorization') ?? ''
+    const token = authHeader.replace('Bearer ', '').trim()
+    if (!token) {
+      return json({ error: 'Missing Authorization header' }, 401)
+    }
+
+    // ── 2. Hash the token and look up the API key ────────────────────
+    const keyHash = await sha256(token)
+
+    supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+
+    const { data: apiKeyData, error: keyError } = await supabase
+      .from('supplier_api_keys')
+      .select('id, user_id, is_active')
+      .eq('key_hash', keyHash)
+      .single()
+
+    apiKey = apiKeyData
+
+    if (keyError || !apiKey) {
+      return json({ error: 'Invalid API key' }, 401)
+    }
+
+    if (!apiKey.is_active) {
+      return json({ error: 'API key is revoked' }, 403)
+    }
+
+    // Update last_used_at (fire and forget — failures are observable via console.error)
+    supabase
+      .from('supplier_api_keys')
+      .update({ last_used_at: new Date().toISOString() })
+      .eq('id', apiKey.id)
+      .then()
+      .catch(console.error)
+
+    // ── 3. Parse body ────────────────────────────────────────────────
+    body = await req.json()
+    const { action, products, ref, source_platform } = body
+
+    if (!action) {
+      return json({ error: 'Missing action field' }, 400)
+    }
+
+    startedAt = new Date().toISOString()
+    let created = 0, updated = 0, deleted = 0
+
+    // ── 4. Execute action ────────────────────────────────────────────
+    if (action === 'full_sync') {
+      if (!Array.isArray(products)) {
+        return json({ error: 'products array required for full_sync' }, 400)
+      }
+
+      // Upsert all provided products
+      for (const p of products) {
+        const row = productToRow(p, apiKey.user_id, source_platform)
+        const { data: existing } = await supabase
+          .from('professional_products')
+          .select('id')
+          .eq('professional_id', apiKey.user_id)
+          .eq('external_ref', p.ref)
+          .maybeSingle()
+
+        if (existing) {
+          await supabase
+            .from('professional_products')
+            // Bug 2 fix: spread row (no id field) + override updated_at
+            .update({ ...row, updated_at: new Date().toISOString() })
+            .eq('id', existing.id)
+          updated++
+        } else {
+          // Bug 2 fix: add id only at insert time
+          await supabase.from('professional_products').insert({ id: crypto.randomUUID(), ...row })
+          created++
+        }
+      }
+
+      // Bug 1 fix: safe ID-based deletion; no-op when refs is empty
+      const refs = products.map((p: any) => p.ref)
+      if (refs.length > 0) {
+        // Fetch all currently synced product IDs for this supplier
+        const { data: allSynced } = await supabase
+          .from('professional_products')
+          .select('id, external_ref')
+          .eq('professional_id', apiKey.user_id)
+          .not('external_ref', 'is', null)
+
+        if (allSynced?.length) {
+          const refSet = new Set(refs)
+          const idsToDelete = allSynced
+            .filter((row: any) => !refSet.has(row.external_ref))
+            .map((row: any) => row.id)
+
+          if (idsToDelete.length > 0) {
+            await supabase
+              .from('professional_products')
+              .delete()
+              .in('id', idsToDelete)
+            deleted = idsToDelete.length
+          }
+        }
+      }
+      // If refs is empty, do NOT delete anything (empty full_sync = no-op for deletions)
+
+    } else if (action === 'upsert') {
+      if (!Array.isArray(products)) {
+        return json({ error: 'products array required for upsert' }, 400)
+      }
+      for (const p of products) {
+        const row = productToRow(p, apiKey.user_id, source_platform)
+        const { data: existing } = await supabase
+          .from('professional_products')
+          .select('id')
+          .eq('professional_id', apiKey.user_id)
+          .eq('external_ref', p.ref)
+          .maybeSingle()
+
+        if (existing) {
+          await supabase
+            .from('professional_products')
+            // Bug 2 fix: spread row (no id field) + override updated_at
+            .update({ ...row, updated_at: new Date().toISOString() })
+            .eq('id', existing.id)
+          updated++
+        } else {
+          // Bug 2 fix: add id only at insert time
+          await supabase.from('professional_products').insert({ id: crypto.randomUUID(), ...row })
+          created++
+        }
+      }
+
+    } else if (action === 'delete') {
+      if (!ref) return json({ error: 'ref required for delete action' }, 400)
+      const { error: delErr } = await supabase
+        .from('professional_products')
+        .delete()
+        .eq('professional_id', apiKey.user_id)
+        .eq('external_ref', ref)
+
+      if (!delErr) deleted = 1
+
+    } else {
+      return json({ error: `Unknown action: ${action}` }, 400)
+    }
+
+    // ── 5. Write sync log ────────────────────────────────────────────
+    await supabase.from('supplier_sync_logs').insert({
+      user_id: apiKey.user_id,
+      api_key_id: apiKey.id,
+      action,
+      status: 'success',
+      products_created: created,
+      products_updated: updated,
+      products_deleted: deleted,
+      source_platform: source_platform ?? null,
+      started_at: startedAt,
+      completed_at: new Date().toISOString(),
+    })
+
+    return json({
+      success: true,
+      action,
+      products_created: created,
+      products_updated: updated,
+      products_deleted: deleted,
+    })
+
+  } catch (err: any) {
+    console.error(err)
+    // Bug 3 fix: attempt to log the error (best effort, don't await)
+    try {
+      if (typeof apiKey !== 'undefined') {
+        supabase?.from('supplier_sync_logs').insert({
+          user_id: apiKey.user_id,
+          api_key_id: apiKey.id,
+          action: body?.action ?? 'unknown',
+          status: 'error',
+          error_message: err.message ?? 'Internal error',
+          started_at: startedAt ?? new Date().toISOString(),
+        })
+      }
+    } catch { /* ignore */ }
+    return json({ error: 'Internal server error' }, 500)
+  }
+})
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
+// Bug 2 fix: productToRow no longer returns id (added at insert time only)
+function productToRow(p: any, userId: string, platform?: string) {
+  return {
+    professional_id: userId,
+    product_name: p.name,
+    description: p.description ?? '',
+    price: Number(p.price),
+    stock: p.stock ?? 0,
+    category: p.category ?? 'General',
+    images: p.images ?? [],
+    is_active: p.active ?? true,
+    external_ref: p.ref,
+    source: p.source_platform ?? platform ?? 'api',
+    last_synced_at: new Date().toISOString(),
+    // created_at intentionally omitted — set by DB default on insert, must not be overwritten on update
+    updated_at: new Date().toISOString(),
+  }
+}
+
+async function sha256(message: string): Promise<string> {
+  const msgBuffer = new TextEncoder().encode(message)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}

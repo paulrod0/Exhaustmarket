@@ -177,6 +177,9 @@ export interface Database {
           is_active: boolean
           created_at: string
           updated_at: string
+          external_ref: string | null
+          source: string | null
+          last_synced_at: string | null
         }
         Insert: {
           id?: string
@@ -190,6 +193,9 @@ export interface Database {
           is_active?: boolean
           created_at?: string
           updated_at?: string
+          external_ref?: string | null
+          source?: string | null
+          last_synced_at?: string | null
         }
         Update: {
           id?: string
@@ -203,6 +209,9 @@ export interface Database {
           is_active?: boolean
           created_at?: string
           updated_at?: string
+          external_ref?: string | null
+          source?: string | null
+          last_synced_at?: string | null
         }
       }
       design_3d: {
@@ -508,6 +517,81 @@ export interface Database {
           created_at?: string
           updated_at?: string
         }
+      }
+      supplier_api_keys: {
+        Row: {
+          id: string
+          user_id: string
+          name: string
+          key_prefix: string
+          key_hash: string
+          is_active: boolean
+          last_used_at: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          name: string
+          key_prefix: string
+          key_hash: string
+          is_active?: boolean
+          last_used_at?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<{
+          name: string
+          key_prefix: string
+          key_hash: string
+          is_active: boolean
+          last_used_at: string | null
+          updated_at: string
+        }>
+      }
+      supplier_sync_logs: {
+        Row: {
+          id: string
+          user_id: string
+          api_key_id: string | null
+          action: 'full_sync' | 'upsert' | 'delete'
+          status: 'success' | 'error'
+          products_created: number
+          products_updated: number
+          products_deleted: number
+          error_message: string | null
+          source_platform: string | null
+          started_at: string
+          completed_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          api_key_id?: string | null
+          action: 'full_sync' | 'upsert' | 'delete'
+          status: 'success' | 'error'
+          products_created?: number
+          products_updated?: number
+          products_deleted?: number
+          error_message?: string | null
+          source_platform?: string | null
+          started_at?: string
+          completed_at?: string | null
+        }
+        Update: Partial<{
+          user_id: string
+          api_key_id: string | null
+          action: 'full_sync' | 'upsert' | 'delete'
+          status: 'success' | 'error'
+          products_created: number
+          products_updated: number
+          products_deleted: number
+          error_message: string | null
+          source_platform: string | null
+          started_at: string
+          completed_at: string | null
+        }>
       }
     }
   }
