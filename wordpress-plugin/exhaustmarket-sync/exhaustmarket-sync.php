@@ -143,12 +143,15 @@ function em_sync_on_product_delete( $product_id ) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function em_sync_full_catalog() {
-    $page    = 1;
-    $created = 0;
-    $updated = 0;
-    $deleted = 0;
-    $last_error = null;
+    set_time_limit( 0 );
 
+    $page         = 1;
+    $all_products = [];
+
+    // Paginate WooCommerce product loading to limit per-batch WC_Product memory usage.
+    // Payloads (plain arrays) are accumulated and sent as a single full_sync request
+    // because the API treats each full_sync as the complete catalog — it deletes any
+    // ExhaustMarket product not present in the payload.
     do {
         $products_raw = wc_get_products([
             'status' => 'publish',
@@ -156,34 +159,24 @@ function em_sync_full_catalog() {
             'page'   => $page,
         ]);
 
-        if ( empty( $products_raw ) ) break;
-
-        $products = array_map( 'em_product_to_payload', $products_raw );
-        $result   = em_sync_send( 'full_sync', $products );
-
-        if ( isset( $result['success'] ) && $result['success'] ) {
-            $created += (int) ( $result['products_created'] ?? 0 );
-            $updated += (int) ( $result['products_updated'] ?? 0 );
-            $deleted += (int) ( $result['products_deleted'] ?? 0 );
-        } else {
-            $last_error = $result['error'] ?? 'Unknown error';
+        foreach ( $products_raw as $product ) {
+            $all_products[] = em_product_to_payload( $product );
         }
 
         $page++;
     } while ( count( $products_raw ) === 100 );
 
-    if ( $last_error ) {
-        return [ 'success' => false, 'error' => $last_error ];
+    if ( empty( $all_products ) ) {
+        return [ 'success' => false, 'error' => 'No published products found' ];
     }
 
-    update_option( 'em_sync_last_full', current_time( 'mysql' ) );
+    $result = em_sync_send( 'full_sync', $all_products );
 
-    return [
-        'success'          => true,
-        'products_created' => $created,
-        'products_updated' => $updated,
-        'products_deleted' => $deleted,
-    ];
+    if ( isset( $result['success'] ) && $result['success'] ) {
+        update_option( 'em_sync_last_full', current_time( 'mysql' ) );
+    }
+
+    return $result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
