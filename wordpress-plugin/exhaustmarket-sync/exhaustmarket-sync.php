@@ -170,7 +170,7 @@ function em_sync_full_catalog() {
         return [ 'success' => false, 'error' => 'No published products found' ];
     }
 
-    $result = em_sync_send( 'full_sync', $all_products );
+    $result = em_sync_send( 'full_sync', $all_products, 120 );
 
     if ( isset( $result['success'] ) && $result['success'] ) {
         update_option( 'em_sync_last_full', current_time( 'mysql' ) );
@@ -234,12 +234,12 @@ function em_product_to_payload( WC_Product $product ): array {
     ];
 }
 
-function em_sync_send( string $action, array $products ): array {
+function em_sync_send( string $action, array $products, int $timeout = 30 ): array {
     return em_sync_send_raw([
         'action'          => $action,
         'products'        => $products,
         'source_platform' => 'woocommerce',
-    ]);
+    ], $timeout);
 }
 
 /**
@@ -251,12 +251,12 @@ function em_sync_send( string $action, array $products ): array {
  *
  * The 'delete' shape does NOT use a 'products' key — it sends a single 'ref' string.
  */
-function em_sync_send_raw( array $body ): array {
+function em_sync_send_raw( array $body, int $timeout = 30 ): array {
     $api_key = get_option( 'em_sync_api_key', '' );
     if ( ! $api_key ) return [ 'success' => false, 'error' => 'No API key configured' ];
 
     $response = wp_remote_post( EM_SYNC_API_ENDPOINT, [
-        'timeout' => 30,
+        'timeout' => $timeout,
         'headers' => [
             'Authorization' => 'Bearer ' . $api_key,
             'Content-Type'  => 'application/json',
