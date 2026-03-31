@@ -5,6 +5,7 @@ import {
   ClipboardList,
   FileText,
   RefreshCw,
+  Key,
   ChevronLeft,
 } from 'lucide-react'
 
@@ -17,6 +18,12 @@ const sidebarLinks = [
     to: '/panel/catalog-sync',
     label: 'Sincronizar Catalogo',
     icon: RefreshCw,
+    end: false,
+  },
+  {
+    to: '/panel/api-keys',
+    label: 'Sincronización API',
+    icon: Key,
     end: false,
   },
 ]

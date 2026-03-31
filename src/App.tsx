@@ -20,6 +20,7 @@ import PanelProductsPage from './pages/panel/PanelProductsPage'
 import PanelOrdersPage from './pages/panel/PanelOrdersPage'
 import PanelInvoicesPage from './pages/panel/PanelInvoicesPage'
 import PanelCatalogSyncPage from './pages/panel/PanelCatalogSyncPage'
+import PanelApiKeysPage from './pages/panel/PanelApiKeysPage'
 
 function App() {
   const { setUser, setLoading, fetchProfile } = useAuthStore()
@@ -67,6 +68,7 @@ function App() {
           <Route path="orders" element={<PanelOrdersPage />} />
           <Route path="invoices" element={<PanelInvoicesPage />} />
           <Route path="catalog-sync" element={<PanelCatalogSyncPage />} />
+          <Route path="api-keys" element={<PanelApiKeysPage />} />
         </Route>
       </Routes>
     </BrowserRouter>
