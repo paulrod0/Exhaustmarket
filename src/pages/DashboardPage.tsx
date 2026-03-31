@@ -402,7 +402,8 @@ function ProDashboard({ profile }: { profile: any }) {
         {recentTransactions.length === 0 ? (
           <EmptyState icon={BarChart3} text="No hay ventas registradas todavia." />
         ) : (
-          <div className="card-apple" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card-apple dashboard-table-scroll" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ minWidth: 560 }}>
             {/* Table header */}
             <div
               style={{
@@ -457,6 +458,7 @@ function ProDashboard({ profile }: { profile: any }) {
                 </span>
               </div>
             ))}
+            </div>
           </div>
         )}
       </section>

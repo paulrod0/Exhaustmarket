@@ -44,12 +44,7 @@ export default function HomePage() {
       {/* ── FEATURE TILES (2-column) ─────────────────────── */}
       <section style={{ padding: '12px 0 0' }}>
         <div
-          className="content-width-wide"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(2, 1fr)',
-            gap: '12px',
-          }}
+          className="content-width-wide home-feature-grid"
         >
           {/* Marketplace Tile — Light */}
           <div
@@ -157,12 +152,7 @@ export default function HomePage() {
           </h2>
 
           <div
-            className="stagger-children"
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '20px',
-            }}
+            className="stagger-children home-roles-grid"
           >
             {/* Particulares */}
             <div className="card-apple" style={{ padding: '48px 32px', textAlign: 'center' }}>
