@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Key, Plus, Trash2, Copy, Check, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
 import { useSupplierStore } from '../../stores/supplierStore'
 
@@ -13,13 +13,10 @@ export default function PanelApiKeysPage() {
   const [copied, setCopied] = useState(false)
   const [revokeConfirmId, setRevokeConfirmId] = useState<string | null>(null)
 
-  const stableFetchApiKeys = useCallback(fetchApiKeys, [fetchApiKeys])
-  const stableFetchSyncLogs = useCallback(fetchSyncLogs, [fetchSyncLogs])
-
   useEffect(() => {
-    stableFetchApiKeys()
-    stableFetchSyncLogs()
-  }, [stableFetchApiKeys, stableFetchSyncLogs])
+    fetchApiKeys()
+    fetchSyncLogs()
+  }, [fetchApiKeys, fetchSyncLogs])
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -340,13 +337,15 @@ export default function PanelApiKeysPage() {
           </div>
           <button
             onClick={fetchSyncLogs}
+            disabled={loading}
             style={{
               background: 'none',
               border: 'none',
-              cursor: 'pointer',
+              cursor: loading ? 'default' : 'pointer',
               fontSize: '12px',
               color: '#86868B',
               padding: 0,
+              opacity: loading ? 0.5 : 1,
             }}
           >
             Actualizar
