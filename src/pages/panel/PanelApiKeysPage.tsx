@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Key, Plus, Trash2, Copy, Check, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react'
+import { Key, Plus, Trash2, Copy, Check, RefreshCw, AlertCircle, CheckCircle, Download, Globe, Plug } from 'lucide-react'
 import { useSupplierStore } from '../../stores/supplierStore'
 
 export default function PanelApiKeysPage() {
@@ -399,34 +399,111 @@ export default function PanelApiKeysPage() {
       </div>
 
       {/* Integration Guide */}
-      <div
-        style={{
-          backgroundColor: '#FFFFFF',
-          borderRadius: '18px',
-          border: '1px solid #F2F2F7',
-          padding: '20px',
-        }}
-      >
-        <p style={{ fontSize: '14px', fontWeight: 500, color: '#1D1D1F', marginBottom: '12px' }}>
-          Cómo integrar tu tienda
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '12px', color: '#6E6E73' }}>
-          <p>
-            <span style={{ color: '#1D1D1F', fontWeight: 500 }}>Endpoint:</span>{' '}
-            <code style={{ backgroundColor: '#F5F5F7', padding: '2px 6px', borderRadius: '4px', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
-              POST https://afsmlmpijjapkzdlrhhd.supabase.co/functions/v1/supplier-sync
-            </code>
+      <div style={{ backgroundColor: '#FFFFFF', borderRadius: '18px', border: '1px solid #F2F2F7', overflow: 'hidden' }}>
+        {/* Header */}
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #F2F2F7' }}>
+          <p style={{ fontSize: '15px', fontWeight: 600, color: '#1D1D1F', margin: 0 }}>
+            Cómo empezar
           </p>
-          <p>
-            <span style={{ color: '#1D1D1F', fontWeight: 500 }}>Header:</span>{' '}
-            <code style={{ backgroundColor: '#F5F5F7', padding: '2px 6px', borderRadius: '4px', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
-              Authorization: Bearer em_live_xxxx
-            </code>
+          <p style={{ fontSize: '13px', color: '#86868B', marginTop: '2px', marginBottom: 0 }}>
+            Sigue estos pasos para sincronizar tu catálogo con ExhaustMarket
           </p>
-          <p>
-            <span style={{ color: '#1D1D1F', fontWeight: 500 }}>WordPress/WooCommerce:</span>{' '}
-            Instala el plugin ExhaustMarket Sync y pega tu API Key en los ajustes.
-          </p>
+        </div>
+
+        <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+          {/* Step 1 */}
+          <div style={{ display: 'flex', gap: '16px' }}>
+            <div style={{
+              flexShrink: 0, width: '28px', height: '28px', borderRadius: '50%',
+              backgroundColor: '#0071E3', color: '#FFFFFF',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '13px', fontWeight: 600,
+            }}>1</div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: '14px', fontWeight: 500, color: '#1D1D1F', marginBottom: '4px' }}>
+                Genera una API Key
+              </p>
+              <p style={{ fontSize: '13px', color: '#6E6E73', lineHeight: 1.5, marginBottom: 0 }}>
+                Haz clic en <strong>Nueva API Key</strong> (arriba a la derecha), ponle un nombre descriptivo (ej: "WooCommerce Producción") y cópiala. Solo se muestra una vez.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ height: '1px', backgroundColor: '#F2F2F7' }} />
+
+          {/* Step 2 — WordPress */}
+          <div style={{ display: 'flex', gap: '16px' }}>
+            <div style={{
+              flexShrink: 0, width: '28px', height: '28px', borderRadius: '50%',
+              backgroundColor: '#0071E3', color: '#FFFFFF',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '13px', fontWeight: 600,
+            }}>2</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <Plug size={14} style={{ color: '#6E6E73' }} />
+                <p style={{ fontSize: '14px', fontWeight: 500, color: '#1D1D1F', margin: 0 }}>
+                  WordPress / WooCommerce
+                </p>
+              </div>
+              <p style={{ fontSize: '13px', color: '#6E6E73', lineHeight: 1.5, marginBottom: '12px' }}>
+                Instala el plugin <strong>ExhaustMarket Sync</strong> en tu WordPress. Ve a
+                {' '}<strong>WooCommerce → ExhaustMarket Sync</strong>, pega tu API Key y haz clic en
+                {' '}<em>"Sincronizar todo el catálogo ahora"</em> para la primera carga. Después se sincroniza automáticamente cada vez que guardes o elimines un producto.
+              </p>
+              <a
+                href="/exhaustmarket-sync-v1.0.0.zip"
+                download="exhaustmarket-sync-v1.0.0.zip"
+                className="btn-pill btn-primary btn-sm"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', textDecoration: 'none' }}
+              >
+                <Download size={14} />
+                Descargar plugin v1.0.0
+              </a>
+            </div>
+          </div>
+
+          <div style={{ height: '1px', backgroundColor: '#F2F2F7' }} />
+
+          {/* Step 3 — Custom API */}
+          <div style={{ display: 'flex', gap: '16px' }}>
+            <div style={{
+              flexShrink: 0, width: '28px', height: '28px', borderRadius: '50%',
+              backgroundColor: '#0071E3', color: '#FFFFFF',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '13px', fontWeight: 600,
+            }}>3</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                <Globe size={14} style={{ color: '#6E6E73' }} />
+                <p style={{ fontSize: '14px', fontWeight: 500, color: '#1D1D1F', margin: 0 }}>
+                  Shopify, Magento u otra plataforma
+                </p>
+              </div>
+              <p style={{ fontSize: '13px', color: '#6E6E73', lineHeight: 1.5, marginBottom: '10px' }}>
+                Haz un <code style={{ backgroundColor: '#F5F5F7', padding: '1px 5px', borderRadius: '4px', fontFamily: 'ui-monospace, SFMono-Regular, monospace', fontSize: '12px' }}>POST</code> a este endpoint con tu API Key en el header:
+              </p>
+              <div style={{
+                backgroundColor: '#F5F5F7',
+                borderRadius: '10px',
+                padding: '12px 14px',
+                fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+                fontSize: '11px',
+                color: '#1D1D1F',
+                lineHeight: 1.7,
+                overflowX: 'auto',
+              }}>
+                <span style={{ color: '#86868B' }}>POST </span>
+                https://afsmlmpijjapkzdlrhhd.supabase.co/functions/v1/supplier-sync{'\n'}
+                <span style={{ color: '#86868B' }}>Authorization: </span>Bearer em_live_xxxx{'\n'}
+                <span style={{ color: '#86868B' }}>Content-Type: </span>application/json{'\n\n'}
+                {'{'} <span style={{ color: '#0066CC' }}>"action"</span>: <span style={{ color: '#34C759' }}>"upsert"</span>,{'\n'}
+                {'  '}<span style={{ color: '#0066CC' }}>"products"</span>: [{' '}{'{'} <span style={{ color: '#0066CC' }}>"ref"</span>: <span style={{ color: '#34C759' }}>"SKU-001"</span>, <span style={{ color: '#0066CC' }}>"name"</span>: <span style={{ color: '#34C759' }}>"..."</span>, <span style={{ color: '#0066CC' }}>"price"</span>: 99.99 {'}'}] {'}'}
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
     </div>
