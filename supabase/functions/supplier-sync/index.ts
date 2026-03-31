@@ -50,11 +50,13 @@ serve(async (req) => {
       return json({ error: 'API key is revoked' }, 403)
     }
 
-    // Update last_used_at (fire and forget)
+    // Update last_used_at (fire and forget — failures are observable via console.error)
     supabase
       .from('supplier_api_keys')
       .update({ last_used_at: new Date().toISOString() })
       .eq('id', apiKey.id)
+      .then()
+      .catch(console.error)
 
     // ── 3. Parse body ────────────────────────────────────────────────
     body = await req.json()
@@ -125,8 +127,10 @@ serve(async (req) => {
       // If refs is empty, do NOT delete anything (empty full_sync = no-op for deletions)
 
     } else if (action === 'upsert') {
-      const list = Array.isArray(products) ? products : [products]
-      for (const p of list) {
+      if (!Array.isArray(products)) {
+        return json({ error: 'products array required for upsert' }, 400)
+      }
+      for (const p of products) {
         const row = productToRow(p, apiKey.user_id, source_platform)
         const { data: existing } = await supabase
           .from('professional_products')
@@ -200,7 +204,7 @@ serve(async (req) => {
         })
       }
     } catch { /* ignore */ }
-    return json({ error: err.message ?? 'Internal error' }, 500)
+    return json({ error: 'Internal server error' }, 500)
   }
 })
 
@@ -227,7 +231,7 @@ function productToRow(p: any, userId: string, platform?: string) {
     external_ref: p.ref,
     source: p.source_platform ?? platform ?? 'api',
     last_synced_at: new Date().toISOString(),
-    created_at: new Date().toISOString(),
+    // created_at intentionally omitted — set by DB default on insert, must not be overwritten on update
     updated_at: new Date().toISOString(),
   }
 }
