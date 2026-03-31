@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { usePanelStore } from '../../stores/panelStore'
 import { useAuthStore } from '../../stores/authStore'
-import { Plus, Pencil, Trash2, X, Package } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
+import { Plus, Pencil, Trash2, X, Package, ImagePlus } from 'lucide-react'
 
 interface ProductForm {
   product_name: string
@@ -9,6 +10,7 @@ interface ProductForm {
   price: number
   stock: number
   category: string
+  images: string[]
 }
 
 interface ServiceForm {
@@ -41,6 +43,29 @@ export default function PanelProductsPage() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+
+  const handleImageUpload = async (file: File) => {
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    setUploadingImage(true)
+    try {
+      const ext = file.name.split('.').pop() ?? 'jpg'
+      const path = `${user.id}/${crypto.randomUUID()}.${ext}`
+      const { error } = await supabase.storage.from('product-images').upload(path, file)
+      if (error) throw error
+      const { data: { publicUrl } } = supabase.storage.from('product-images').getPublicUrl(path)
+      setProductForm(f => ({ ...f, images: [...f.images, publicUrl] }))
+    } catch (err: any) {
+      setFormError(err.message ?? 'Error al subir imagen')
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
+  const removeImage = (url: string) => {
+    setProductForm(f => ({ ...f, images: f.images.filter(i => i !== url) }))
+  }
 
   const emptyProductForm: ProductForm = {
     product_name: '',
@@ -48,6 +73,7 @@ export default function PanelProductsPage() {
     price: 0,
     stock: 0,
     category: '',
+    images: [],
   }
 
   const emptyServiceForm: ServiceForm = {
@@ -95,6 +121,7 @@ export default function PanelProductsPage() {
         price: item.price,
         stock: item.stock ?? 0,
         category: item.category ?? '',
+        images: item.images ?? [],
       })
     }
     setShowForm(true)
@@ -333,6 +360,64 @@ export default function PanelProductsPage() {
                 />
               </div>
 
+              {/* Images (products only) */}
+              {!isWorkshop && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 500, color: '#1D1D1F' }}>
+                    Fotos
+                  </label>
+                  {productForm.images.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px' }}>
+                      {productForm.images.map((url) => (
+                        <div key={url} style={{ position: 'relative', width: '72px', height: '72px', flexShrink: 0 }}>
+                          <img
+                            src={url}
+                            alt=""
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '10px', border: '1px solid #F2F2F7' }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeImage(url)}
+                            aria-label="Eliminar foto"
+                            style={{
+                              position: 'absolute', top: '-6px', right: '-6px',
+                              width: '20px', height: '20px', borderRadius: '50%',
+                              backgroundColor: '#FF3B30', border: 'none', cursor: 'pointer',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF',
+                            }}
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <label
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '8px 14px', borderRadius: '20px',
+                      border: '1px dashed #D2D2D7', cursor: uploadingImage ? 'not-allowed' : 'pointer',
+                      fontSize: '13px', color: uploadingImage ? '#86868B' : '#0066CC',
+                      backgroundColor: '#FAFAFA',
+                    }}
+                  >
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      style={{ display: 'none' }}
+                      disabled={uploadingImage}
+                      onChange={(e) => {
+                        const f = e.target.files?.[0]
+                        if (f) handleImageUpload(f)
+                        e.target.value = ''
+                      }}
+                    />
+                    <ImagePlus size={14} />
+                    {uploadingImage ? 'Subiendo...' : 'Añadir foto'}
+                  </label>
+                </div>
+              )}
+
               {/* Actions */}
               <div className="flex justify-end gap-3" style={{ paddingTop: '8px' }}>
                 <button
@@ -429,6 +514,9 @@ export default function PanelProductsPage() {
             <table className="w-full text-left" style={{ fontSize: '14px' }}>
               <thead>
                 <tr style={{ backgroundColor: '#F5F5F7' }}>
+                  {!isWorkshop && (
+                    <th style={{ padding: '12px 20px', width: '52px' }} />
+                  )}
                   <th style={{ padding: '12px 20px', fontWeight: 500, color: '#6E6E73', fontSize: '12px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                     Nombre
                   </th>
@@ -456,6 +544,21 @@ export default function PanelProductsPage() {
                     onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#FAFAFA' }}
                     onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#FFFFFF' }}
                   >
+                    {!isWorkshop && (
+                      <td style={{ padding: '10px 20px', width: '52px' }}>
+                        {item.images?.[0] ? (
+                          <img
+                            src={item.images[0]}
+                            alt=""
+                            style={{ width: '40px', height: '40px', objectFit: 'cover', borderRadius: '8px', border: '1px solid #F2F2F7' }}
+                          />
+                        ) : (
+                          <div style={{ width: '40px', height: '40px', borderRadius: '8px', backgroundColor: '#F5F5F7', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Package size={16} style={{ color: '#D2D2D7' }} />
+                          </div>
+                        )}
+                      </td>
+                    )}
                     <td style={{ padding: '14px 20px', color: '#1D1D1F', fontWeight: 500 }}>
                       {isWorkshop ? item.service_name : item.product_name}
                     </td>
