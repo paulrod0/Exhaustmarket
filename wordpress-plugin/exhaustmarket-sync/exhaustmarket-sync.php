@@ -112,7 +112,12 @@ function em_sync_on_product_save( $product_id ) {
     $product = wc_get_product( $product_id );
     if ( ! $product ) return;
 
-    em_sync_send( 'upsert', [ em_product_to_payload( $product ) ] );
+    $result = em_sync_send( 'upsert', [ em_product_to_payload( $product ) ] );
+
+    // Store per-product sync result
+    $status = ( isset( $result['success'] ) && $result['success'] ) ? 'success' : 'error';
+    update_post_meta( $product_id, '_em_sync_at', current_time( 'mysql' ) );
+    update_post_meta( $product_id, '_em_sync_status', $status );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -149,6 +154,32 @@ function em_sync_full_catalog() {
     }
 
     return $result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRODUCT LIST COLUMN — PER-PRODUCT SYNC STATUS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Add column header
+add_filter( 'manage_edit-product_columns', 'em_sync_add_product_column' );
+function em_sync_add_product_column( $columns ) {
+    $columns['em_sync'] = 'EM Sync';
+    return $columns;
+}
+
+// Populate column data
+add_action( 'manage_product_posts_custom_column', 'em_sync_product_column_content', 10, 2 );
+function em_sync_product_column_content( $column, $post_id ) {
+    if ( $column !== 'em_sync' ) return;
+    $at     = get_post_meta( $post_id, '_em_sync_at', true );
+    $status = get_post_meta( $post_id, '_em_sync_status', true );
+    if ( ! $at ) {
+        echo '—';
+    } elseif ( $status === 'success' ) {
+        echo '✅ ' . esc_html( $at );
+    } else {
+        echo '❌ ' . esc_html( $at );
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
