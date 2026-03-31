@@ -364,3 +364,69 @@ input, textarea, select {
   .text-body-large { font-size: 17px; }
   .section-light, .section-gray, .section-dark { padding: 45px 0; }
 }
+
+/* ─── Panel sidebar mobile ───────────────────────────────── */
+.panel-sidebar {
+  transition: transform 0.25s ease;
+}
+@media (max-width: 768px) {
+  .panel-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100vh;
+    z-index: 200;
+    transform: translateX(-100%);
+  }
+  .panel-sidebar--open {
+    transform: translateX(0);
+  }
+  .panel-overlay {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 199;
+  }
+}
+
+/* ─── HomePage grids mobile ──────────────────────────────── */
+.home-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+@media (max-width: 735px) {
+  .home-feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.home-roles-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+@media (max-width: 1068px) {
+  .home-roles-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 735px) {
+  .home-roles-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── Dashboard table scroll ─────────────────────────────── */
+.dashboard-table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── Marketplace detail layout ──────────────────────────── */
+@media (max-width: 735px) {
+  .detail-layout {
+    grid-template-columns: 1fr !important;
+  }
+}
