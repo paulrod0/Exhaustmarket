@@ -43,6 +43,7 @@ export default function Layout() {
     { to: '/marketplace', label: 'Marketplace' },
     { to: '/quotes', label: 'Cotizaciones' },
     { to: '/manuals', label: 'Manuales' },
+    { to: '/esquemas', label: 'Esquemas' },
   ]
 
   const conditionalLinks = [
