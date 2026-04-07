@@ -21,6 +21,7 @@ import PanelOrdersPage from './pages/panel/PanelOrdersPage'
 import PanelInvoicesPage from './pages/panel/PanelInvoicesPage'
 import PanelCatalogSyncPage from './pages/panel/PanelCatalogSyncPage'
 import PanelApiKeysPage from './pages/panel/PanelApiKeysPage'
+import ExhaustSchemasPage from './pages/ExhaustSchemasPage'
 
 function App() {
   const { setUser, setLoading, fetchProfile } = useAuthStore()
@@ -60,6 +61,7 @@ function App() {
           <Route path="quotes" element={<ProtectedRoute><QuotesPage /></ProtectedRoute>} />
           <Route path="designs" element={<ProtectedRoute><Design3DPage /></ProtectedRoute>} />
           <Route path="manuals" element={<ProtectedRoute><ManualsPage /></ProtectedRoute>} />
+          <Route path="esquemas" element={<ProtectedRoute><ExhaustSchemasPage /></ProtectedRoute>} />
           <Route path="payment-result" element={<PaymentResultPage />} />
         </Route>
         <Route path="panel" element={<PanelGuard><PanelLayout /></PanelGuard>}>
