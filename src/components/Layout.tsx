@@ -53,6 +53,7 @@ export default function Layout() {
     ...(profile?.user_type === 'workshop' || profile?.user_type === 'professional'
       ? [{ to: '/panel', label: 'Panel' }]
       : []),
+    ...(profile?.is_admin ? [{ to: '/admin', label: 'Admin' }] : []),
   ]
 
   const allNavLinks = [...navLinks, ...conditionalLinks]

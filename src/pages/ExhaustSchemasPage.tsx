@@ -26,6 +26,8 @@ interface CarSchema {
   color: string
   note?: string | null
   components: Record<string, Component>
+  cover_url?: string | null
+  gallery_urls?: string[] | null
 }
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
@@ -721,6 +723,41 @@ export default function ExhaustSchemasPage() {
               </div>
             )}
           </div>
+
+          {/* Photo gallery */}
+          {(car.cover_url || (car.gallery_urls && car.gallery_urls.length > 0)) && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '8px',
+                marginBottom: '16px',
+              }}
+            >
+              {[
+                ...(car.cover_url ? [car.cover_url] : []),
+                ...(car.gallery_urls ?? []),
+              ].map((url) => (
+                <div
+                  key={url}
+                  style={{
+                    aspectRatio: '4 / 3',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    backgroundColor: '#F5F5F7',
+                    border: '1px solid #F2F2F7',
+                  }}
+                >
+                  <img
+                    src={url}
+                    alt={`${car.brand} ${car.model}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    loading="lazy"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Diagram + detail panel */}
           <div style={{ display: 'grid', gridTemplateColumns: component ? '1fr 340px' : '1fr', gap: '16px', alignItems: 'start' }}>
