@@ -22,6 +22,9 @@ import PanelInvoicesPage from './pages/panel/PanelInvoicesPage'
 import PanelCatalogSyncPage from './pages/panel/PanelCatalogSyncPage'
 import PanelApiKeysPage from './pages/panel/PanelApiKeysPage'
 import ExhaustSchemasPage from './pages/ExhaustSchemasPage'
+import AdminLayout from './components/AdminLayout'
+import AdminSchemasListPage from './pages/admin/AdminSchemasListPage'
+import AdminSchemaEditorPage from './pages/admin/AdminSchemaEditorPage'
 
 function App() {
   const { setUser, setLoading, fetchProfile } = useAuthStore()
@@ -72,6 +75,12 @@ function App() {
           <Route path="catalog-sync" element={<PanelCatalogSyncPage />} />
           <Route path="api-keys" element={<PanelApiKeysPage />} />
         </Route>
+        <Route path="admin" element={<AdminGuard><AdminLayout /></AdminGuard>}>
+          <Route index element={<Navigate to="/admin/esquemas" replace />} />
+          <Route path="esquemas" element={<AdminSchemasListPage />} />
+          <Route path="esquemas/nuevo" element={<AdminSchemaEditorPage />} />
+          <Route path="esquemas/:id" element={<AdminSchemaEditorPage />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   )
@@ -107,6 +116,28 @@ function PanelGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (profile?.user_type !== 'workshop' && profile?.user_type !== 'professional') {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <>{children}</>
+}
+
+function AdminGuard({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuthStore()
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#1D1D1F', color: 'white' }}>
+        Cargando...
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (!profile?.is_admin) {
     return <Navigate to="/dashboard" replace />
   }
 
