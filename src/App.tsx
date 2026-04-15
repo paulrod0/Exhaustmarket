@@ -22,9 +22,16 @@ import PanelInvoicesPage from './pages/panel/PanelInvoicesPage'
 import PanelCatalogSyncPage from './pages/panel/PanelCatalogSyncPage'
 import PanelApiKeysPage from './pages/panel/PanelApiKeysPage'
 import ExhaustSchemasPage from './pages/ExhaustSchemasPage'
+import BrandsPage from './pages/BrandsPage'
+import GuidesPage from './pages/GuidesPage'
+import GuideDetailPage from './pages/GuideDetailPage'
 import AdminLayout from './components/AdminLayout'
 import AdminSchemasListPage from './pages/admin/AdminSchemasListPage'
 import AdminSchemaEditorPage from './pages/admin/AdminSchemaEditorPage'
+import AdminBrandsListPage from './pages/admin/AdminBrandsListPage'
+import AdminBrandEditorPage from './pages/admin/AdminBrandEditorPage'
+import AdminArticlesListPage from './pages/admin/AdminArticlesListPage'
+import AdminArticleEditorPage from './pages/admin/AdminArticleEditorPage'
 
 function App() {
   const { setUser, setLoading, fetchProfile } = useAuthStore()
@@ -65,6 +72,9 @@ function App() {
           <Route path="designs" element={<ProtectedRoute><Design3DPage /></ProtectedRoute>} />
           <Route path="manuals" element={<ProtectedRoute><ManualsPage /></ProtectedRoute>} />
           <Route path="esquemas" element={<ProtectedRoute><ExhaustSchemasPage /></ProtectedRoute>} />
+          <Route path="marcas" element={<BrandsPage />} />
+          <Route path="guias" element={<GuidesPage />} />
+          <Route path="guias/:slug" element={<GuideDetailPage />} />
           <Route path="payment-result" element={<PaymentResultPage />} />
         </Route>
         <Route path="panel" element={<PanelGuard><PanelLayout /></PanelGuard>}>
@@ -80,6 +90,12 @@ function App() {
           <Route path="esquemas" element={<AdminSchemasListPage />} />
           <Route path="esquemas/nuevo" element={<AdminSchemaEditorPage />} />
           <Route path="esquemas/:id" element={<AdminSchemaEditorPage />} />
+          <Route path="marcas" element={<AdminBrandsListPage />} />
+          <Route path="marcas/nuevo" element={<AdminBrandEditorPage />} />
+          <Route path="marcas/:id" element={<AdminBrandEditorPage />} />
+          <Route path="articulos" element={<AdminArticlesListPage />} />
+          <Route path="articulos/nuevo" element={<AdminArticleEditorPage />} />
+          <Route path="articulos/:id" element={<AdminArticleEditorPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

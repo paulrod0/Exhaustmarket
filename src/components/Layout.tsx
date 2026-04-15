@@ -41,9 +41,10 @@ export default function Layout() {
   const navLinks = [
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/marketplace', label: 'Marketplace' },
-    { to: '/quotes', label: 'Cotizaciones' },
-    { to: '/manuals', label: 'Manuales' },
     { to: '/esquemas', label: 'Esquemas' },
+    { to: '/marcas', label: 'Marcas' },
+    { to: '/guias', label: 'Guías' },
+    { to: '/quotes', label: 'Cotizaciones' },
   ]
 
   const conditionalLinks = [
