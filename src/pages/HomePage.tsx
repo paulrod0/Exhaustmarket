@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Car, Wrench, Factory, ShoppingBag, FileText } from 'lucide-react'
+import { Car, Wrench, Factory, ShoppingBag, FileText, Layers, BookOpen } from 'lucide-react'
 
 export default function HomePage() {
   return (
@@ -31,13 +31,50 @@ export default function HomePage() {
               animationDelay: '0.2s',
             }}
           >
-            <Link to="/marketplace" className="btn-text" style={{ fontSize: '21px' }}>
-              Explorar Marketplace
+            <Link to="/esquemas" className="btn-text" style={{ fontSize: '21px' }}>
+              Ver esquemas
             </Link>
-            <Link to="/quotes" className="btn-text" style={{ fontSize: '21px' }}>
-              Solicitar Cotización
+            <Link to="/marcas" className="btn-text" style={{ fontSize: '21px' }}>
+              Marcas aftermarket
+            </Link>
+            <Link to="/guias" className="btn-text" style={{ fontSize: '21px' }}>
+              Guías y reviews
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* ── NUEVAS SECCIONES MVP ───────────────────────── */}
+      <section style={{ padding: '40px 0 12px' }}>
+        <div
+          className="content-width"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+            gap: 14,
+          }}
+        >
+          <MvpTile
+            icon={<Layers size={24} />}
+            title="Esquemas interactivos"
+            body="200+ modelos de alta gama. Haz clic en cualquier componente para ver materiales, temperaturas y consejos de instalación."
+            to="/esquemas"
+            accent="#0071E3"
+          />
+          <MvpTile
+            icon={<Factory size={24} />}
+            title="Marcas aftermarket"
+            body="Akrapovic, Capristo, Milltek, Remus, HKS... fabricantes de referencia con fichas y especialidades."
+            to="/marcas"
+            accent="#34C759"
+          />
+          <MvpTile
+            icon={<BookOpen size={24} />}
+            title="Guías técnicas"
+            body="Materiales, downpipes, X-pipe vs H-pipe, homologación ITV... todo lo que necesitas antes de comprar."
+            to="/guias"
+            accent="#FF9500"
+          />
         </div>
       </section>
 
@@ -272,5 +309,67 @@ export default function HomePage() {
         </div>
       </section>
     </div>
+  )
+}
+
+function MvpTile({
+  icon,
+  title,
+  body,
+  to,
+  accent,
+}: {
+  icon: React.ReactNode
+  title: string
+  body: string
+  to: string
+  accent: string
+}) {
+  return (
+    <Link
+      to={to}
+      style={{
+        backgroundColor: '#FFFFFF',
+        border: '1px solid #F2F2F7',
+        borderRadius: 16,
+        padding: 20,
+        textDecoration: 'none',
+        color: 'inherit',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
+        transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+      }}
+      onMouseEnter={(e) => {
+        const t = e.currentTarget
+        t.style.transform = 'translateY(-2px)'
+        t.style.boxShadow = '0 4px 16px rgba(0,0,0,0.06)'
+      }}
+      onMouseLeave={(e) => {
+        const t = e.currentTarget
+        t.style.transform = 'translateY(0)'
+        t.style.boxShadow = 'none'
+      }}
+    >
+      <div
+        style={{
+          width: 40,
+          height: 40,
+          borderRadius: 10,
+          backgroundColor: `${accent}14`,
+          color: accent,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {icon}
+      </div>
+      <h3 style={{ fontSize: 18, fontWeight: 600, color: '#1D1D1F', margin: 0 }}>{title}</h3>
+      <p style={{ fontSize: 13, color: '#86868B', margin: 0, lineHeight: 1.5 }}>{body}</p>
+      <span style={{ fontSize: 13, fontWeight: 500, color: accent, marginTop: 'auto' }}>
+        Explorar →
+      </span>
+    </Link>
   )
 }

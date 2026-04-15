@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
-import { Layers, LogOut, ArrowLeft } from 'lucide-react'
+import { Layers, LogOut, ArrowLeft, Factory, BookOpen } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 
 export default function AdminLayout() {
@@ -9,6 +9,8 @@ export default function AdminLayout() {
 
   const navLinks = [
     { to: '/admin/esquemas', label: 'Esquemas', icon: Layers },
+    { to: '/admin/marcas', label: 'Marcas aftermarket', icon: Factory },
+    { to: '/admin/articulos', label: 'Artículos', icon: BookOpen },
   ]
 
   const isActive = (path: string) =>
