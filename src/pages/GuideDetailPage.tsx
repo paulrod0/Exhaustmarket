@@ -2,11 +2,21 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, Clock, Calendar, Loader2, BookOpen } from 'lucide-react'
 import { supabase } from '../lib/supabase'
-import { ARTICLE_CATEGORY_LABEL, type Article } from '../lib/contentTypes'
+import { useAuthStore } from '../stores/authStore'
+import {
+  ARTICLE_CATEGORY_LABEL,
+  canViewTiers,
+  type Article,
+} from '../lib/contentTypes'
 import { MarkdownRenderer } from '../lib/markdown'
+import TierBadge from '../components/TierBadge'
+import UpgradeCallout from '../components/UpgradeCallout'
+import VideoEmbed from '../components/VideoEmbed'
+import ThreeDViewer from '../components/ThreeDViewer'
 
 export default function GuideDetailPage() {
   const { slug } = useParams<{ slug: string }>()
+  const { user, profile } = useAuthStore()
   const [article, setArticle] = useState<Article | null>(null)
   const [related, setRelated] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
@@ -124,17 +134,23 @@ export default function GuideDetailPage() {
       </Link>
 
       <div style={{ marginBottom: 24 }}>
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: '#0071E3',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em',
-          }}
-        >
-          {ARTICLE_CATEGORY_LABEL[article.category]}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: '#0071E3',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+          >
+            {ARTICLE_CATEGORY_LABEL[article.category]}
+          </span>
+          <TierBadge
+            allowedTiers={article.allowed_tiers ?? []}
+            locked={!canViewTiers(article.allowed_tiers, profile?.user_type, profile?.is_admin)}
+          />
+        </div>
         <h1
           style={{
             fontSize: 34,
@@ -205,7 +221,41 @@ export default function GuideDetailPage() {
         </div>
       )}
 
-      <MarkdownRenderer source={article.content_md} />
+      {(() => {
+        const authorized = canViewTiers(article.allowed_tiers, profile?.user_type, profile?.is_admin)
+        if (!authorized) {
+          return (
+            <>
+              {article.excerpt && (
+                <p style={{ fontSize: 17, color: '#1D1D1F', lineHeight: 1.6, margin: '0 0 16px' }}>
+                  {article.excerpt}
+                </p>
+              )}
+              <UpgradeCallout
+                allowedTiers={article.allowed_tiers ?? []}
+                isAuthenticated={!!user}
+              />
+            </>
+          )
+        }
+        return (
+          <>
+            {article.video_url && <VideoEmbed url={article.video_url} />}
+            <MarkdownRenderer source={article.content_md} />
+            {article.attachment_url && (
+              <div style={{ marginTop: 28 }}>
+                <h3 style={{ fontSize: 16, fontWeight: 600, color: '#1D1D1F', margin: '0 0 10px' }}>
+                  Archivo adjunto
+                </h3>
+                <ThreeDViewer
+                  url={article.attachment_url}
+                  filename={`${article.slug}.${article.attachment_url.split('.').pop() ?? 'bin'}`}
+                />
+              </div>
+            )}
+          </>
+        )
+      })()}
 
       {article.tags.length > 0 && (
         <div

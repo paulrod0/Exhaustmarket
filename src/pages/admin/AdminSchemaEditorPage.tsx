@@ -12,6 +12,7 @@ import {
 } from '../../lib/schemaDefinitions'
 import PhotoUploader from '../../components/admin/PhotoUploader'
 import BrandSuggestionsPicker from '../../components/admin/BrandSuggestionsPicker'
+import TierSelector from '../../components/admin/TierSelector'
 
 interface FormState {
   brand: string
@@ -26,6 +27,7 @@ interface FormState {
   cover_url: string | null
   gallery_urls: string[]
   is_active: boolean
+  allowed_tiers: string[]
 }
 
 const DEFAULT_LAYOUT: Layout = 'v8tt'
@@ -43,6 +45,7 @@ const emptyState = (): FormState => ({
   cover_url: null,
   gallery_urls: [],
   is_active: true,
+  allowed_tiers: [],
 })
 
 export default function AdminSchemaEditorPage() {
@@ -87,6 +90,7 @@ export default function AdminSchemaEditorPage() {
           cover_url: row.cover_url,
           gallery_urls: row.gallery_urls ?? [],
           is_active: row.is_active,
+          allowed_tiers: row.allowed_tiers ?? [],
         })
       }
       setLoading(false)
@@ -141,6 +145,7 @@ export default function AdminSchemaEditorPage() {
       cover_url: form.cover_url,
       gallery_urls: form.gallery_urls,
       is_active: form.is_active,
+      allowed_tiers: form.allowed_tiers,
     }
 
     if (isNew) {
@@ -422,6 +427,18 @@ export default function AdminSchemaEditorPage() {
         subtitle="Marcas con sistemas verificados o compatibles para este modelo. Se mostrarán al usuario en la ficha pública."
       >
         <BrandSuggestionsPicker schemaId={id && id !== 'nuevo' ? id : null} />
+      </Section>
+
+      {/* Sección 2c: Acceso por suscripción */}
+      <Section
+        title="Acceso por suscripción"
+        subtitle="Controla qué tipos de usuario pueden ver este esquema. Si dejas 'Público' todos los visitantes podrán verlo gratis."
+      >
+        <TierSelector
+          value={form.allowed_tiers}
+          onChange={(next) => setForm({ ...form, allowed_tiers: next })}
+          helpText="Los admins siempre pueden ver todo. Los visitantes sin cuenta ven un callout de 'crear cuenta'."
+        />
       </Section>
 
       {/* Sección 3: Componentes */}

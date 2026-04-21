@@ -8,6 +8,8 @@ import {
   type ArticleCategory,
 } from '../../lib/contentTypes'
 import ImagePicker from '../../components/admin/ImagePicker'
+import FilePicker from '../../components/admin/FilePicker'
+import TierSelector from '../../components/admin/TierSelector'
 
 interface FormState {
   slug: string
@@ -20,6 +22,10 @@ interface FormState {
   tags: string
   reading_minutes: string
   is_published: boolean
+  allowed_tiers: string[]
+  video_url: string
+  attachment_url: string | null
+  attachment_type: string | null
 }
 
 const empty = (): FormState => ({
@@ -33,6 +39,10 @@ const empty = (): FormState => ({
   tags: '',
   reading_minutes: '5',
   is_published: false,
+  allowed_tiers: [],
+  video_url: '',
+  attachment_url: null,
+  attachment_type: null,
 })
 
 function slugify(text: string): string {
@@ -80,6 +90,10 @@ export default function AdminArticleEditorPage() {
           tags: a.tags.join(', '),
           reading_minutes: a.reading_minutes.toString(),
           is_published: a.is_published,
+          allowed_tiers: a.allowed_tiers ?? [],
+          video_url: a.video_url ?? '',
+          attachment_url: a.attachment_url,
+          attachment_type: a.attachment_type,
         })
       }
       setLoading(false)
@@ -109,6 +123,10 @@ export default function AdminArticleEditorPage() {
       reading_minutes: parseInt(form.reading_minutes, 10) || 5,
       is_published: form.is_published,
       published_at: form.is_published ? new Date().toISOString() : null,
+      allowed_tiers: form.allowed_tiers,
+      video_url: form.video_url.trim() || null,
+      attachment_url: form.attachment_url,
+      attachment_type: form.attachment_type,
     }
 
     if (isNew) {
@@ -373,6 +391,75 @@ export default function AdminArticleEditorPage() {
               </span>
             </label>
           </Field>
+
+          {/* Vídeo embebido */}
+          <div
+            style={{
+              marginTop: 20,
+              paddingTop: 16,
+              borderTop: '1px solid #F2F2F7',
+            }}
+          >
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: '#1D1D1F', margin: '0 0 4px' }}>
+              Vídeo tutorial (opcional)
+            </h3>
+            <p style={{ fontSize: 12, color: '#86868B', margin: '0 0 12px' }}>
+              Pega una URL de YouTube o Vimeo para incrustarla encima del contenido.
+            </p>
+            <Field label="URL del vídeo">
+              <input
+                style={input}
+                value={form.video_url}
+                onChange={(e) => setForm({ ...form, video_url: e.target.value })}
+                placeholder="https://www.youtube.com/watch?v=..."
+              />
+            </Field>
+          </div>
+
+          {/* Archivo adjunto (3D, PDF, ...) */}
+          <div
+            style={{
+              marginTop: 20,
+              paddingTop: 16,
+              borderTop: '1px solid #F2F2F7',
+            }}
+          >
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: '#1D1D1F', margin: '0 0 4px' }}>
+              Archivo descargable / modelo 3D (opcional)
+            </h3>
+            <p style={{ fontSize: 12, color: '#86868B', margin: '0 0 12px' }}>
+              Sube un PDF del manual, o un modelo 3D (GLB / GLTF se renderizan en la web;
+              STL / OBJ se ofrecen como descarga).
+            </p>
+            <FilePicker
+              prefix={`articles/${form.slug || 'draft'}`}
+              value={form.attachment_url}
+              onChange={(url, type) =>
+                setForm({ ...form, attachment_url: url, attachment_type: type })
+              }
+            />
+          </div>
+
+          {/* Control de acceso por suscripción */}
+          <div
+            style={{
+              marginTop: 20,
+              paddingTop: 16,
+              borderTop: '1px solid #F2F2F7',
+            }}
+          >
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: '#1D1D1F', margin: '0 0 4px' }}>
+              Acceso por suscripción
+            </h3>
+            <p style={{ fontSize: 12, color: '#86868B', margin: '0 0 12px' }}>
+              Selecciona qué tipo de usuario puede ver este artículo. Los usuarios sin
+              acceso verán un callout para crear cuenta o actualizar su plan.
+            </p>
+            <TierSelector
+              value={form.allowed_tiers}
+              onChange={(next) => setForm({ ...form, allowed_tiers: next })}
+            />
+          </div>
         </div>
 
         <div

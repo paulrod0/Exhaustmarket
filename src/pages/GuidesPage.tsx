@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Search, Clock, BookOpen } from 'lucide-react'
+import { Search, Clock, BookOpen, Play, Box } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useAuthStore } from '../stores/authStore'
 import {
   ARTICLE_CATEGORY_LABEL,
+  canViewTiers,
   type Article,
   type ArticleCategory,
 } from '../lib/contentTypes'
+import TierBadge from '../components/TierBadge'
 
 export default function GuidesPage() {
+  const { profile } = useAuthStore()
   const [articles, setArticles] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -133,7 +137,9 @@ export default function GuidesPage() {
             gap: 16,
           }}
         >
-          {filtered.map((a) => (
+          {filtered.map((a) => {
+            const locked = !canViewTiers(a.allowed_tiers, profile?.user_type, profile?.is_admin)
+            return (
             <Link
               key={a.id}
               to={`/guias/${a.slug}`}
@@ -147,6 +153,7 @@ export default function GuidesPage() {
                 display: 'flex',
                 flexDirection: 'column',
                 transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+                position: 'relative',
               }}
               onMouseEnter={(e) => {
                 const t = e.currentTarget
@@ -167,6 +174,7 @@ export default function GuidesPage() {
                   alignItems: 'center',
                   justifyContent: 'center',
                   overflow: 'hidden',
+                  position: 'relative',
                 }}
               >
                 {a.cover_url ? (
@@ -179,6 +187,22 @@ export default function GuidesPage() {
                 ) : (
                   <BookOpen size={28} style={{ color: '#C7C7CC' }} />
                 )}
+                {/* Badges sobre la imagen */}
+                <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: 5 }}>
+                  <TierBadge allowedTiers={a.allowed_tiers ?? []} locked={locked} size="sm" />
+                </div>
+                <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 5 }}>
+                  {a.video_url && (
+                    <span style={{ ...mediaBadge, backgroundColor: '#E5E5EA', color: '#1D1D1F' }}>
+                      <Play size={10} /> Vídeo
+                    </span>
+                  )}
+                  {a.attachment_url && (
+                    <span style={{ ...mediaBadge, backgroundColor: '#E5E5EA', color: '#1D1D1F' }}>
+                      <Box size={10} /> {a.attachment_type === '3d-model' ? '3D' : 'PDF'}
+                    </span>
+                  )}
+                </div>
               </div>
               <div style={{ padding: 16, flex: 1, display: 'flex', flexDirection: 'column' }}>
                 <span
@@ -231,9 +255,21 @@ export default function GuidesPage() {
                 </div>
               </div>
             </Link>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
   )
+}
+
+const mediaBadge: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: 3,
+  fontSize: 10,
+  fontWeight: 600,
+  padding: '3px 7px',
+  borderRadius: 6,
+  backdropFilter: 'blur(6px)',
 }
