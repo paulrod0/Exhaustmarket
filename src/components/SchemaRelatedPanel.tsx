@@ -38,10 +38,16 @@ export default function SchemaRelatedPanel({
         .select('brand_id, aftermarket_brands(*)')
         .eq('schema_id', schemaId)
 
-      // Artículos relacionados: buscar por tags que contengan la marca o el layout
+      // 1) Artículos enlazados directamente (asociados por admin)
+      const directLinksPromise = supabase
+        .from('schema_article_links' as any)
+        .select('article_id, kind, articles(*)')
+        .eq('schema_id', schemaId)
+
+      // 2) Fallback: tags match
       const brandLc = schemaBrand.toLowerCase()
       const layoutLc = schemaLayout.toLowerCase()
-      const artPromise = supabase
+      const tagMatchPromise = supabase
         .from('articles' as any)
         .select('*')
         .eq('is_published', true)
@@ -49,15 +55,30 @@ export default function SchemaRelatedPanel({
         .order('published_at', { ascending: false })
         .limit(3)
 
-      const [sugRes, artRes] = await Promise.all([sugPromise, artPromise])
+      const [sugRes, directRes, tagRes] = await Promise.all([
+        sugPromise,
+        directLinksPromise,
+        tagMatchPromise,
+      ])
       if (cancelled) return
 
       const suggestedBrands = (sugRes.data ?? [])
         .map((row: any) => row.aftermarket_brands as AftermarketBrand)
         .filter((b: AftermarketBrand | null): b is AftermarketBrand => b != null && b.is_active)
 
+      // Combinar directos (prioridad) + tag-match, sin duplicar
+      const directArticles = (directRes.data ?? [])
+        .map((row: any) => row.articles as Article)
+        .filter((a: Article | null): a is Article => a != null && a.is_published)
+
+      const directIds = new Set(directArticles.map((a) => a.id))
+      const tagMatched = (tagRes.data ?? [])
+        .filter((a: any) => !directIds.has(a.id)) as unknown as Article[]
+
+      const combined = [...directArticles, ...tagMatched].slice(0, 4)
+
       setBrands(suggestedBrands)
-      setArticles((artRes.data ?? []) as unknown as Article[])
+      setArticles(combined)
       setLoading(false)
     })()
     return () => {
@@ -175,7 +196,7 @@ export default function SchemaRelatedPanel({
               margin: '0 0 12px',
             }}
           >
-            Guías relacionadas
+            Tutoriales y guías
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {articles.map((a) => (

@@ -27,12 +27,16 @@ import BrandDetailPage from './pages/BrandDetailPage'
 import GuidesPage from './pages/GuidesPage'
 import GuideDetailPage from './pages/GuideDetailPage'
 import AdminLayout from './components/AdminLayout'
+import AdminDashboardPage from './pages/admin/AdminDashboardPage'
 import AdminSchemasListPage from './pages/admin/AdminSchemasListPage'
 import AdminSchemaEditorPage from './pages/admin/AdminSchemaEditorPage'
 import AdminBrandsListPage from './pages/admin/AdminBrandsListPage'
 import AdminBrandEditorPage from './pages/admin/AdminBrandEditorPage'
 import AdminArticlesListPage from './pages/admin/AdminArticlesListPage'
 import AdminArticleEditorPage from './pages/admin/AdminArticleEditorPage'
+import AdminUsersPage from './pages/admin/AdminUsersPage'
+import AdminSubscriptionsPage from './pages/admin/AdminSubscriptionsPage'
+import ToastHost from './components/ToastHost'
 
 function App() {
   const { setUser, setLoading, fetchProfile } = useAuthStore()
@@ -88,7 +92,7 @@ function App() {
           <Route path="api-keys" element={<PanelApiKeysPage />} />
         </Route>
         <Route path="admin" element={<AdminGuard><AdminLayout /></AdminGuard>}>
-          <Route index element={<Navigate to="/admin/esquemas" replace />} />
+          <Route index element={<AdminDashboardPage />} />
           <Route path="esquemas" element={<AdminSchemasListPage />} />
           <Route path="esquemas/nuevo" element={<AdminSchemaEditorPage />} />
           <Route path="esquemas/:id" element={<AdminSchemaEditorPage />} />
@@ -98,8 +102,11 @@ function App() {
           <Route path="articulos" element={<AdminArticlesListPage />} />
           <Route path="articulos/nuevo" element={<AdminArticleEditorPage />} />
           <Route path="articulos/:id" element={<AdminArticleEditorPage />} />
+          <Route path="usuarios" element={<AdminUsersPage />} />
+          <Route path="suscripciones" element={<AdminSubscriptionsPage />} />
         </Route>
       </Routes>
+      <ToastHost />
     </BrowserRouter>
   )
 }

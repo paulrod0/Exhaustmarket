@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
-import { Layers, LogOut, ArrowLeft, Factory, BookOpen } from 'lucide-react'
+import { Layers, LogOut, ArrowLeft, Factory, BookOpen, LayoutDashboard, Users, CreditCard } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 
 export default function AdminLayout() {
@@ -7,14 +7,32 @@ export default function AdminLayout() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  const navLinks = [
-    { to: '/admin/esquemas', label: 'Esquemas', icon: Layers },
-    { to: '/admin/marcas', label: 'Marcas aftermarket', icon: Factory },
-    { to: '/admin/articulos', label: 'Artículos', icon: BookOpen },
+  const navSections = [
+    {
+      title: 'General',
+      links: [
+        { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+      ],
+    },
+    {
+      title: 'Contenido',
+      links: [
+        { to: '/admin/esquemas', label: 'Esquemas', icon: Layers },
+        { to: '/admin/marcas', label: 'Marcas aftermarket', icon: Factory },
+        { to: '/admin/articulos', label: 'Artículos / tutoriales', icon: BookOpen },
+      ],
+    },
+    {
+      title: 'CRM',
+      links: [
+        { to: '/admin/usuarios', label: 'Usuarios', icon: Users },
+        { to: '/admin/suscripciones', label: 'Suscripciones', icon: CreditCard },
+      ],
+    },
   ]
 
-  const isActive = (path: string) =>
-    location.pathname === path || location.pathname.startsWith(path + '/')
+  const isActive = (path: string, exact = false) =>
+    exact ? location.pathname === path : location.pathname === path || location.pathname.startsWith(path + '/')
 
   async function handleSignOut() {
     try {
@@ -68,33 +86,52 @@ export default function AdminLayout() {
           </Link>
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {navLinks.map((link) => {
-            const Icon = link.icon
-            const active = isActive(link.to)
-            return (
-              <Link
-                key={link.to}
-                to={link.to}
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {navSections.map((section) => (
+            <div key={section.title}>
+              <div
                 style={{
-                  textDecoration: 'none',
-                  color: active ? '#FFFFFF' : 'rgba(255,255,255,0.75)',
-                  backgroundColor: active ? 'rgba(255,255,255,0.08)' : 'transparent',
-                  padding: '8px 12px',
-                  borderRadius: 8,
-                  fontSize: 13,
-                  fontWeight: active ? 600 : 400,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 10,
-                  transition: 'all 0.15s ease',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  color: 'rgba(255,255,255,0.4)',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  padding: '0 12px',
+                  marginBottom: 4,
                 }}
               >
-                <Icon size={15} />
-                {link.label}
-              </Link>
-            )
-          })}
+                {section.title}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {section.links.map((link) => {
+                  const Icon = link.icon
+                  const active = isActive(link.to, (link as any).exact)
+                  return (
+                    <Link
+                      key={link.to}
+                      to={link.to}
+                      style={{
+                        textDecoration: 'none',
+                        color: active ? '#FFFFFF' : 'rgba(255,255,255,0.75)',
+                        backgroundColor: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+                        padding: '7px 12px',
+                        borderRadius: 7,
+                        fontSize: 13,
+                        fontWeight: active ? 600 : 400,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <Icon size={14} />
+                      {link.label}
+                    </Link>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 4 }}>

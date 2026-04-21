@@ -103,6 +103,24 @@ export interface SchemaBrandSuggestion {
   created_at: string
 }
 
+export type SchemaArticleKind = 'tutorial' | 'review' | 'related' | 'install_guide'
+
+export interface SchemaArticleLink {
+  id: string
+  schema_id: string
+  article_id: string
+  kind: SchemaArticleKind
+  display_order: number
+  created_at: string
+}
+
+export const SCHEMA_ARTICLE_KIND_LABEL: Record<SchemaArticleKind, string> = {
+  tutorial: 'Tutorial',
+  install_guide: 'Guía de instalación',
+  review: 'Review',
+  related: 'Relacionado',
+}
+
 export const PRICE_TIER_LABEL: Record<PriceTier, string> = {
   'budget': 'Económica',
   'mid': 'Media',
