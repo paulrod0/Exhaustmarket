@@ -29,23 +29,36 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setLoading: (loading) => set({ loading }),
 
   signUp: async (email, password, fullName, userType) => {
+    // El trigger on_auth_user_created crea automáticamente user_profile con los
+    // valores de raw_user_meta_data (full_name, user_type). Aquí solo hay que
+    // asegurarse de pasarlos en options.data.
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: {
+          full_name: fullName,
+          user_type: userType,
+        },
+      },
     })
 
     if (error) throw error
     if (!data.user) throw new Error('No user returned')
 
-    const { error: profileError } = await supabase
+    // Defensa: si por algún motivo el trigger no existe o no se ejecutó,
+    // hacemos upsert del perfil. El trigger usa ON CONFLICT DO NOTHING,
+    // así que llamar a upsert desde aquí también es seguro.
+    await supabase
       .from('user_profiles')
-      .insert({
-        id: data.user.id,
-        full_name: fullName,
-        user_type: userType,
-      } as any)
-
-    if (profileError) throw profileError
+      .upsert(
+        {
+          id: data.user.id,
+          full_name: fullName,
+          user_type: userType,
+        } as any,
+        { onConflict: 'id' },
+      )
 
     set({ user: data.user })
     await get().fetchProfile()

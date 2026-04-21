@@ -1,6 +1,11 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Thermometer, Layers, Info, ChevronRight, X, Search } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import { useAuthStore } from '../stores/authStore'
+import { canViewTiers } from '../lib/contentTypes'
+import SchemaRelatedPanel from '../components/SchemaRelatedPanel'
+import TierBadge from '../components/TierBadge'
+import UpgradeCallout from '../components/UpgradeCallout'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -26,6 +31,9 @@ interface CarSchema {
   color: string
   note?: string | null
   components: Record<string, Component>
+  cover_url?: string | null
+  gallery_urls?: string[] | null
+  allowed_tiers?: string[] | null
 }
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
@@ -516,6 +524,7 @@ function I6ttDiagram({ selected, onSelect, color }: { selected: string | null; o
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ExhaustSchemasPage() {
+  const { user, profile } = useAuthStore()
   const [schemas, setSchemas] = useState<CarSchema[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -688,8 +697,13 @@ export default function ExhaustSchemasPage() {
             }}
           >
             <div>
-              <p style={{ fontSize: '19px', fontWeight: 600, color: '#1D1D1F', margin: 0 }}>
+              <p style={{ fontSize: '19px', fontWeight: 600, color: '#1D1D1F', margin: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ color: car.color }}>●</span> {car.brand} {car.model}
+                <TierBadge
+                  allowedTiers={car.allowed_tiers ?? []}
+                  locked={!canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin)}
+                  size="sm"
+                />
               </p>
               <p style={{ fontSize: '13px', color: '#86868B', margin: '2px 0 0' }}>{car.year}</p>
             </div>
@@ -722,8 +736,63 @@ export default function ExhaustSchemasPage() {
             )}
           </div>
 
+          {/* Photo gallery */}
+          {(car.cover_url || (car.gallery_urls && car.gallery_urls.length > 0)) && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '8px',
+                marginBottom: '16px',
+              }}
+            >
+              {[
+                ...(car.cover_url ? [car.cover_url] : []),
+                ...(car.gallery_urls ?? []),
+              ].map((url) => (
+                <div
+                  key={url}
+                  style={{
+                    aspectRatio: '4 / 3',
+                    borderRadius: '12px',
+                    overflow: 'hidden',
+                    backgroundColor: '#F5F5F7',
+                    border: '1px solid #F2F2F7',
+                  }}
+                >
+                  <img
+                    src={url}
+                    alt={`${car.brand} ${car.model}`}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    loading="lazy"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin) && (
+            <UpgradeCallout
+              allowedTiers={car.allowed_tiers ?? []}
+              isAuthenticated={!!user}
+              title="Esquema técnico exclusivo"
+              description="El diagrama interactivo con materiales, temperaturas y consejos técnicos está disponible solo para suscripciones seleccionadas."
+            />
+          )}
+
           {/* Diagram + detail panel */}
-          <div style={{ display: 'grid', gridTemplateColumns: component ? '1fr 340px' : '1fr', gap: '16px', alignItems: 'start' }}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: component ? '1fr 340px' : '1fr',
+              gap: '16px',
+              alignItems: 'start',
+              position: 'relative',
+              ...(canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin)
+                ? {}
+                : { filter: 'blur(6px) saturate(0.5)', pointerEvents: 'none', userSelect: 'none', opacity: 0.55 }),
+            }}
+          >
 
             {/* SVG Diagram */}
             <div
@@ -871,6 +940,13 @@ export default function ExhaustSchemasPage() {
               Toca un componente en el esquema o en las pills para ver sus detalles técnicos
             </div>
           )}
+
+          {/* Panel relacionados: marcas sugeridas + guías por tags */}
+          <SchemaRelatedPanel
+            schemaId={car.id}
+            schemaBrand={car.brand}
+            schemaLayout={car.layout}
+          />
         </>
       )}
     </div>

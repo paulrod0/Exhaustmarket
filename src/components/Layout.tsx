@@ -41,9 +41,10 @@ export default function Layout() {
   const navLinks = [
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/marketplace', label: 'Marketplace' },
-    { to: '/quotes', label: 'Cotizaciones' },
-    { to: '/manuals', label: 'Manuales' },
     { to: '/esquemas', label: 'Esquemas' },
+    { to: '/marcas', label: 'Marcas' },
+    { to: '/guias', label: 'Guías' },
+    { to: '/quotes', label: 'Cotizaciones' },
   ]
 
   const conditionalLinks = [
@@ -53,6 +54,7 @@ export default function Layout() {
     ...(profile?.user_type === 'workshop' || profile?.user_type === 'professional'
       ? [{ to: '/panel', label: 'Panel' }]
       : []),
+    ...(profile?.is_admin ? [{ to: '/admin', label: 'Admin' }] : []),
   ]
 
   const allNavLinks = [...navLinks, ...conditionalLinks]

@@ -12,6 +12,7 @@ interface UserProfile {
   company_name: string | null
   tax_id: string | null
   is_verified: boolean
+  is_admin: boolean
   created_at: string
   updated_at: string
 }
