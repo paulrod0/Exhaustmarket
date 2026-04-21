@@ -22,6 +22,21 @@ import PanelInvoicesPage from './pages/panel/PanelInvoicesPage'
 import PanelCatalogSyncPage from './pages/panel/PanelCatalogSyncPage'
 import PanelApiKeysPage from './pages/panel/PanelApiKeysPage'
 import ExhaustSchemasPage from './pages/ExhaustSchemasPage'
+import BrandsPage from './pages/BrandsPage'
+import BrandDetailPage from './pages/BrandDetailPage'
+import GuidesPage from './pages/GuidesPage'
+import GuideDetailPage from './pages/GuideDetailPage'
+import AdminLayout from './components/AdminLayout'
+import AdminDashboardPage from './pages/admin/AdminDashboardPage'
+import AdminSchemasListPage from './pages/admin/AdminSchemasListPage'
+import AdminSchemaEditorPage from './pages/admin/AdminSchemaEditorPage'
+import AdminBrandsListPage from './pages/admin/AdminBrandsListPage'
+import AdminBrandEditorPage from './pages/admin/AdminBrandEditorPage'
+import AdminArticlesListPage from './pages/admin/AdminArticlesListPage'
+import AdminArticleEditorPage from './pages/admin/AdminArticleEditorPage'
+import AdminUsersPage from './pages/admin/AdminUsersPage'
+import AdminSubscriptionsPage from './pages/admin/AdminSubscriptionsPage'
+import ToastHost from './components/ToastHost'
 
 function App() {
   const { setUser, setLoading, fetchProfile } = useAuthStore()
@@ -62,6 +77,10 @@ function App() {
           <Route path="designs" element={<ProtectedRoute><Design3DPage /></ProtectedRoute>} />
           <Route path="manuals" element={<ProtectedRoute><ManualsPage /></ProtectedRoute>} />
           <Route path="esquemas" element={<ProtectedRoute><ExhaustSchemasPage /></ProtectedRoute>} />
+          <Route path="marcas" element={<BrandsPage />} />
+          <Route path="marcas/:slug" element={<BrandDetailPage />} />
+          <Route path="guias" element={<GuidesPage />} />
+          <Route path="guias/:slug" element={<GuideDetailPage />} />
           <Route path="payment-result" element={<PaymentResultPage />} />
         </Route>
         <Route path="panel" element={<PanelGuard><PanelLayout /></PanelGuard>}>
@@ -72,7 +91,22 @@ function App() {
           <Route path="catalog-sync" element={<PanelCatalogSyncPage />} />
           <Route path="api-keys" element={<PanelApiKeysPage />} />
         </Route>
+        <Route path="admin" element={<AdminGuard><AdminLayout /></AdminGuard>}>
+          <Route index element={<AdminDashboardPage />} />
+          <Route path="esquemas" element={<AdminSchemasListPage />} />
+          <Route path="esquemas/nuevo" element={<AdminSchemaEditorPage />} />
+          <Route path="esquemas/:id" element={<AdminSchemaEditorPage />} />
+          <Route path="marcas" element={<AdminBrandsListPage />} />
+          <Route path="marcas/nuevo" element={<AdminBrandEditorPage />} />
+          <Route path="marcas/:id" element={<AdminBrandEditorPage />} />
+          <Route path="articulos" element={<AdminArticlesListPage />} />
+          <Route path="articulos/nuevo" element={<AdminArticleEditorPage />} />
+          <Route path="articulos/:id" element={<AdminArticleEditorPage />} />
+          <Route path="usuarios" element={<AdminUsersPage />} />
+          <Route path="suscripciones" element={<AdminSubscriptionsPage />} />
+        </Route>
       </Routes>
+      <ToastHost />
     </BrowserRouter>
   )
 }
@@ -107,6 +141,28 @@ function PanelGuard({ children }: { children: React.ReactNode }) {
   }
 
   if (profile?.user_type !== 'workshop' && profile?.user_type !== 'professional') {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <>{children}</>
+}
+
+function AdminGuard({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuthStore()
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', backgroundColor: '#1D1D1F', color: 'white' }}>
+        Cargando...
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (!profile?.is_admin) {
     return <Navigate to="/dashboard" replace />
   }
 
