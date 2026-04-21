@@ -23,6 +23,7 @@ import PanelCatalogSyncPage from './pages/panel/PanelCatalogSyncPage'
 import PanelApiKeysPage from './pages/panel/PanelApiKeysPage'
 import ExhaustSchemasPage from './pages/ExhaustSchemasPage'
 import BrandsPage from './pages/BrandsPage'
+import BrandDetailPage from './pages/BrandDetailPage'
 import GuidesPage from './pages/GuidesPage'
 import GuideDetailPage from './pages/GuideDetailPage'
 import AdminLayout from './components/AdminLayout'
@@ -73,6 +74,7 @@ function App() {
           <Route path="manuals" element={<ProtectedRoute><ManualsPage /></ProtectedRoute>} />
           <Route path="esquemas" element={<ProtectedRoute><ExhaustSchemasPage /></ProtectedRoute>} />
           <Route path="marcas" element={<BrandsPage />} />
+          <Route path="marcas/:slug" element={<BrandDetailPage />} />
           <Route path="guias" element={<GuidesPage />} />
           <Route path="guias/:slug" element={<GuideDetailPage />} />
           <Route path="payment-result" element={<PaymentResultPage />} />

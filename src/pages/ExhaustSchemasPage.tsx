@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { Thermometer, Layers, Info, ChevronRight, X, Search } from 'lucide-react'
 import { supabase } from '../lib/supabase'
+import SchemaRelatedPanel from '../components/SchemaRelatedPanel'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -908,6 +909,13 @@ export default function ExhaustSchemasPage() {
               Toca un componente en el esquema o en las pills para ver sus detalles técnicos
             </div>
           )}
+
+          {/* Panel relacionados: marcas sugeridas + guías por tags */}
+          <SchemaRelatedPanel
+            schemaId={car.id}
+            schemaBrand={car.brand}
+            schemaLayout={car.layout}
+          />
         </>
       )}
     </div>

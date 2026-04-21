@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Clock, Calendar, Loader2 } from 'lucide-react'
+import { ArrowLeft, Clock, Calendar, Loader2, BookOpen } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { ARTICLE_CATEGORY_LABEL, type Article } from '../lib/contentTypes'
 import { MarkdownRenderer } from '../lib/markdown'
@@ -8,6 +8,7 @@ import { MarkdownRenderer } from '../lib/markdown'
 export default function GuideDetailPage() {
   const { slug } = useParams<{ slug: string }>()
   const [article, setArticle] = useState<Article | null>(null)
+  const [related, setRelated] = useState<Article[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
@@ -17,6 +18,8 @@ export default function GuideDetailPage() {
     ;(async () => {
       setLoading(true)
       setNotFound(false)
+      setRelated([])
+
       const { data, error } = await supabase
         .from('articles' as any)
         .select('*')
@@ -26,9 +29,36 @@ export default function GuideDetailPage() {
       if (cancelled) return
       if (error || !data) {
         setNotFound(true)
-      } else {
-        setArticle(data as unknown as Article)
+        setLoading(false)
+        return
       }
+      const art = data as unknown as Article
+      setArticle(art)
+
+      // Artículos relacionados por tags compartidos o misma categoría
+      if (art.tags.length > 0) {
+        const { data: rel } = await supabase
+          .from('articles' as any)
+          .select('*')
+          .eq('is_published', true)
+          .neq('id', art.id)
+          .overlaps('tags', art.tags)
+          .order('published_at', { ascending: false })
+          .limit(3)
+        if (!cancelled) setRelated((rel ?? []) as unknown as Article[])
+      } else {
+        // Fallback: misma categoría
+        const { data: rel } = await supabase
+          .from('articles' as any)
+          .select('*')
+          .eq('is_published', true)
+          .eq('category', art.category)
+          .neq('id', art.id)
+          .order('published_at', { ascending: false })
+          .limit(3)
+        if (!cancelled) setRelated((rel ?? []) as unknown as Article[])
+      }
+
       setLoading(false)
     })()
     return () => {
@@ -203,6 +233,78 @@ export default function GuideDetailPage() {
             </span>
           ))}
         </div>
+      )}
+
+      {related.length > 0 && (
+        <section style={{ marginTop: 40, paddingTop: 24, borderTop: '1px solid #F2F2F7' }}>
+          <h2
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: '#86868B',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              margin: '0 0 16px',
+            }}
+          >
+            Te puede interesar
+          </h2>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+              gap: 12,
+            }}
+          >
+            {related.map((r) => (
+              <Link
+                key={r.id}
+                to={`/guias/${r.slug}`}
+                style={{
+                  backgroundColor: '#FAFAFA',
+                  borderRadius: 12,
+                  padding: 14,
+                  textDecoration: 'none',
+                  color: 'inherit',
+                  display: 'flex',
+                  gap: 10,
+                  alignItems: 'center',
+                  transition: 'background-color 0.15s ease',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F2F2F7' }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#FAFAFA' }}
+              >
+                <div
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 8,
+                    backgroundColor: 'white',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {r.cover_url ? (
+                    <img src={r.cover_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <BookOpen size={18} style={{ color: '#C7C7CC' }} />
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: '#0071E3', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {ARTICLE_CATEGORY_LABEL[r.category]}
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#1D1D1F', lineHeight: 1.3, marginTop: 2 }}>
+                    {r.title}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   )

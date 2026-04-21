@@ -11,6 +11,7 @@ import {
   type Layout,
 } from '../../lib/schemaDefinitions'
 import PhotoUploader from '../../components/admin/PhotoUploader'
+import BrandSuggestionsPicker from '../../components/admin/BrandSuggestionsPicker'
 
 interface FormState {
   brand: string
@@ -413,6 +414,14 @@ export default function AdminSchemaEditorPage() {
             }))
           }
         />
+      </Section>
+
+      {/* Sección 2b: Marcas recomendadas */}
+      <Section
+        title="Marcas aftermarket recomendadas"
+        subtitle="Marcas con sistemas verificados o compatibles para este modelo. Se mostrarán al usuario en la ficha pública."
+      >
+        <BrandSuggestionsPicker schemaId={id && id !== 'nuevo' ? id : null} />
       </Section>
 
       {/* Sección 3: Componentes */}
