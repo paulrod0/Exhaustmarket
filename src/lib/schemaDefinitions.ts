@@ -157,6 +157,8 @@ export interface ExhaustSchemaRecord {
   cover_url: string | null
   gallery_urls: string[]
   is_active: boolean
+  /** Array vacío = público. Si tiene valores, solo esos tiers tienen acceso completo. */
+  allowed_tiers: string[]
   created_at: string
 }
 
