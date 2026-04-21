@@ -13,6 +13,9 @@ import {
 import PhotoUploader from '../../components/admin/PhotoUploader'
 import BrandSuggestionsPicker from '../../components/admin/BrandSuggestionsPicker'
 import TierSelector from '../../components/admin/TierSelector'
+import SchemaArticleLinksPicker from '../../components/admin/SchemaArticleLinksPicker'
+import { toast } from '../../lib/toast'
+import { Copy } from 'lucide-react'
 
 interface FormState {
   brand: string
@@ -157,8 +160,10 @@ export default function AdminSchemaEditorPage() {
       setSaving(false)
       if (error) {
         setError(error.message)
+        toast.error('No se pudo crear: ' + error.message)
         return
       }
+      toast.success('Esquema creado')
       navigate(`/admin/esquemas/${(data as any).id}`, { replace: true })
     } else {
       const { error } = await supabase
@@ -168,9 +173,45 @@ export default function AdminSchemaEditorPage() {
       setSaving(false)
       if (error) {
         setError(error.message)
+        toast.error('Error al guardar: ' + error.message)
         return
       }
+      toast.success('Cambios guardados')
     }
+  }
+
+  /** Clona todos los campos de otro esquema existente (excepto fotos e id). */
+  async function cloneFrom() {
+    const input = window.prompt(
+      'Pega el ID del esquema a clonar, o busca "ferrari-296" para buscarlo por texto.\n\nO simplemente deja vacío y cancela.',
+    )
+    if (!input || !input.trim()) return
+    const { data: sources } = await supabase
+      .from('exhaust_schemas' as any)
+      .select('*')
+      .or(`id.eq.${input.trim()},brand.ilike.%${input.trim()}%,model.ilike.%${input.trim()}%`)
+      .limit(1)
+    const src = (sources ?? [])[0] as any
+    if (!src) {
+      toast.error('No se encontró ningún esquema con ese criterio.')
+      return
+    }
+    setForm({
+      brand: src.brand,
+      model: src.model + ' (clonado)',
+      year: src.year ?? '',
+      engine: src.engine ?? '',
+      power: src.power ?? '',
+      layout: src.layout,
+      color: src.color ?? '#0071E3',
+      note: src.note ?? '',
+      components: src.components ?? blankComponentsForLayout(src.layout),
+      cover_url: null, // no copiamos fotos
+      gallery_urls: [],
+      is_active: false, // empieza como borrador
+      allowed_tiers: src.allowed_tiers ?? [],
+    })
+    toast.success(`Plantilla de ${src.brand} ${src.model} aplicada. Cambia el modelo y guarda.`)
   }
 
   async function remove() {
@@ -181,9 +222,10 @@ export default function AdminSchemaEditorPage() {
       .delete()
       .eq('id', id)
     if (error) {
-      setError(error.message)
+      toast.error(error.message)
       return
     }
+    toast.success('Esquema borrado')
     navigate('/admin/esquemas')
   }
 
@@ -235,7 +277,30 @@ export default function AdminSchemaEditorPage() {
             {layoutDef.label} · {layoutDef.components.length} componentes
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {isNew && (
+            <button
+              onClick={cloneFrom}
+              disabled={saving}
+              title="Rellena todos los campos copiándolos de otro esquema"
+              style={{
+                backgroundColor: 'white',
+                color: '#0071E3',
+                border: '1px solid #0071E3',
+                padding: '9px 14px',
+                borderRadius: 8,
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <Copy size={14} />
+              Clonar de otro
+            </button>
+          )}
           {!isNew && (
             <button
               onClick={remove}
@@ -438,6 +503,16 @@ export default function AdminSchemaEditorPage() {
           value={form.allowed_tiers}
           onChange={(next) => setForm({ ...form, allowed_tiers: next })}
           helpText="Los admins siempre pueden ver todo. Los visitantes sin cuenta ven un callout de 'crear cuenta'."
+        />
+      </Section>
+
+      {/* Sección 2d: Guías y tutoriales asociados */}
+      <Section
+        title="Guías y tutoriales relacionados"
+        subtitle="Asocia artículos del blog con este modelo. Aparecerán automáticamente en la ficha pública como 'Tutoriales para este coche'."
+      >
+        <SchemaArticleLinksPicker
+          mode={{ kind: 'for-schema', schemaId: id && id !== 'nuevo' ? id : null }}
         />
       </Section>
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, Clock, Calendar, Loader2, BookOpen } from 'lucide-react'
+import { ArrowLeft, Clock, Calendar, Loader2, BookOpen, Layers } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import {
@@ -14,11 +14,21 @@ import UpgradeCallout from '../components/UpgradeCallout'
 import VideoEmbed from '../components/VideoEmbed'
 import ThreeDViewer from '../components/ThreeDViewer'
 
+interface LinkedSchema {
+  id: string
+  brand: string
+  model: string
+  year: string | null
+  cover_url: string | null
+  color: string | null
+}
+
 export default function GuideDetailPage() {
   const { slug } = useParams<{ slug: string }>()
   const { user, profile } = useAuthStore()
   const [article, setArticle] = useState<Article | null>(null)
   const [related, setRelated] = useState<Article[]>([])
+  const [linkedSchemas, setLinkedSchemas] = useState<LinkedSchema[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
@@ -44,6 +54,18 @@ export default function GuideDetailPage() {
       }
       const art = data as unknown as Article
       setArticle(art)
+
+      // Esquemas asociados a este artículo
+      const { data: linksData } = await supabase
+        .from('schema_article_links' as any)
+        .select('exhaust_schemas(id, brand, model, year, cover_url, color, is_active)')
+        .eq('article_id', art.id)
+      if (!cancelled) {
+        const schemas = (linksData ?? [])
+          .map((row: any) => row.exhaust_schemas)
+          .filter((s: any) => s != null && s.is_active) as LinkedSchema[]
+        setLinkedSchemas(schemas)
+      }
 
       // Artículos relacionados por tags compartidos o misma categoría
       if (art.tags.length > 0) {
@@ -256,6 +278,75 @@ export default function GuideDetailPage() {
           </>
         )
       })()}
+
+      {linkedSchemas.length > 0 && (
+        <section style={{ marginTop: 40, paddingTop: 24, borderTop: '1px solid #F2F2F7' }}>
+          <h2
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: '#86868B',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+              margin: '0 0 16px',
+            }}
+          >
+            Modelos a los que aplica esta guía
+          </h2>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+              gap: 10,
+            }}
+          >
+            {linkedSchemas.map((s) => (
+              <Link
+                key={s.id}
+                to="/esquemas"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  padding: 10,
+                  backgroundColor: '#FAFAFA',
+                  borderRadius: 12,
+                  textDecoration: 'none',
+                  color: 'inherit',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F2F2F7' }}
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#FAFAFA' }}
+              >
+                <div
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 8,
+                    backgroundColor: 'white',
+                    overflow: 'hidden',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}
+                >
+                  {s.cover_url ? (
+                    <img src={s.cover_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <Layers size={16} style={{ color: '#C7C7CC' }} />
+                  )}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#1D1D1F', lineHeight: 1.3 }}>
+                    <span style={{ color: s.color ?? '#0071E3' }}>●</span> {s.brand} {s.model}
+                  </div>
+                  {s.year && <div style={{ fontSize: 11, color: '#86868B' }}>{s.year}</div>}
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {article.tags.length > 0 && (
         <div

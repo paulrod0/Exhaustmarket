@@ -10,6 +10,8 @@ import {
 import ImagePicker from '../../components/admin/ImagePicker'
 import FilePicker from '../../components/admin/FilePicker'
 import TierSelector from '../../components/admin/TierSelector'
+import SchemaArticleLinksPicker from '../../components/admin/SchemaArticleLinksPicker'
+import { toast } from '../../lib/toast'
 
 interface FormState {
   slug: string
@@ -138,8 +140,10 @@ export default function AdminArticleEditorPage() {
       setSaving(false)
       if (error) {
         setError(error.message)
+        toast.error('No se pudo crear: ' + error.message)
         return
       }
+      toast.success('Artículo creado')
       navigate(`/admin/articulos/${(data as any).id}`, { replace: true })
     } else {
       const { error } = await supabase
@@ -147,7 +151,12 @@ export default function AdminArticleEditorPage() {
         .update(payload as any)
         .eq('id', id!)
       setSaving(false)
-      if (error) setError(error.message)
+      if (error) {
+        setError(error.message)
+        toast.error('Error al guardar: ' + error.message)
+      } else {
+        toast.success('Cambios guardados')
+      }
     }
   }
 
@@ -159,9 +168,10 @@ export default function AdminArticleEditorPage() {
       .delete()
       .eq('id', id)
     if (error) {
-      setError(error.message)
+      toast.error(error.message)
       return
     }
+    toast.success('Artículo borrado')
     navigate('/admin/articulos')
   }
 
@@ -462,22 +472,42 @@ export default function AdminArticleEditorPage() {
           </div>
         </div>
 
-        <div
-          style={{
-            backgroundColor: 'white',
-            border: '1px solid #E5E5EA',
-            borderRadius: 12,
-            padding: 20,
-            height: 'fit-content',
-          }}
-        >
-          <ImagePicker
-            label="Imagen de portada"
-            value={form.cover_url}
-            onChange={(url) => setForm({ ...form, cover_url: url })}
-            prefix="articles"
-            aspect="16 / 9"
-          />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div
+            style={{
+              backgroundColor: 'white',
+              border: '1px solid #E5E5EA',
+              borderRadius: 12,
+              padding: 20,
+            }}
+          >
+            <ImagePicker
+              label="Imagen de portada"
+              value={form.cover_url}
+              onChange={(url) => setForm({ ...form, cover_url: url })}
+              prefix="articles"
+              aspect="16 / 9"
+            />
+          </div>
+
+          <div
+            style={{
+              backgroundColor: 'white',
+              border: '1px solid #E5E5EA',
+              borderRadius: 12,
+              padding: 20,
+            }}
+          >
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: '#1D1D1F', margin: '0 0 4px' }}>
+              Esquemas asociados
+            </h3>
+            <p style={{ fontSize: 12, color: '#86868B', margin: '0 0 12px' }}>
+              Este artículo aparecerá en la ficha pública de los esquemas elegidos.
+            </p>
+            <SchemaArticleLinksPicker
+              mode={{ kind: 'for-article', articleId: id && id !== 'nuevo' ? id : null }}
+            />
+          </div>
         </div>
       </div>
 
