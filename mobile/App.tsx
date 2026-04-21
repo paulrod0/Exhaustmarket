@@ -22,10 +22,57 @@ import PanelProductsScreen from './src/screens/panel/PanelProductsScreen'
 import PanelOrdersScreen from './src/screens/panel/PanelOrdersScreen'
 import PanelInvoicesScreen from './src/screens/panel/PanelInvoicesScreen'
 import PanelCatalogSyncScreen from './src/screens/panel/PanelCatalogSyncScreen'
+import SchemasScreen from './src/screens/SchemasScreen'
+import SchemaDetailScreen from './src/screens/SchemaDetailScreen'
+import BrandsScreen from './src/screens/BrandsScreen'
+import BrandDetailScreen from './src/screens/BrandDetailScreen'
+import GuidesScreen from './src/screens/GuidesScreen'
+import GuideDetailScreen from './src/screens/GuideDetailScreen'
 
 const Stack = createNativeStackNavigator()
 const Tab = createBottomTabNavigator()
 const PanelStackNav = createNativeStackNavigator()
+const SchemasStackNav = createNativeStackNavigator()
+const BrandsStackNav = createNativeStackNavigator()
+const GuidesStackNav = createNativeStackNavigator()
+
+const contentHeaderStyle = {
+  headerStyle: { backgroundColor: '#FFFFFF' },
+  headerTintColor: '#1D1D1F',
+  headerTitleStyle: { fontWeight: '600' as const, fontSize: 17 },
+  headerShadowVisible: false,
+}
+
+function SchemasStack() {
+  return (
+    <SchemasStackNav.Navigator screenOptions={contentHeaderStyle}>
+      <SchemasStackNav.Screen name="SchemasList" component={SchemasScreen} options={{ title: 'Esquemas' }} />
+      <SchemasStackNav.Screen name="SchemaDetail" component={SchemaDetailScreen} options={{ title: 'Esquema' }} />
+      <SchemasStackNav.Screen name="BrandDetail" component={BrandDetailScreen} options={{ title: 'Marca' }} />
+      <SchemasStackNav.Screen name="GuideDetail" component={GuideDetailScreen} options={{ title: 'Guía' }} />
+    </SchemasStackNav.Navigator>
+  )
+}
+
+function BrandsStack() {
+  return (
+    <BrandsStackNav.Navigator screenOptions={contentHeaderStyle}>
+      <BrandsStackNav.Screen name="BrandsList" component={BrandsScreen} options={{ title: 'Marcas' }} />
+      <BrandsStackNav.Screen name="BrandDetail" component={BrandDetailScreen} options={{ title: 'Marca' }} />
+      <BrandsStackNav.Screen name="SchemaDetail" component={SchemaDetailScreen} options={{ title: 'Esquema' }} />
+    </BrandsStackNav.Navigator>
+  )
+}
+
+function GuidesStack() {
+  return (
+    <GuidesStackNav.Navigator screenOptions={contentHeaderStyle}>
+      <GuidesStackNav.Screen name="GuidesList" component={GuidesScreen} options={{ title: 'Guías' }} />
+      <GuidesStackNav.Screen name="GuideDetail" component={GuideDetailScreen} options={{ title: 'Guía' }} />
+      <GuidesStackNav.Screen name="SchemaDetail" component={SchemaDetailScreen} options={{ title: 'Esquema' }} />
+    </GuidesStackNav.Navigator>
+  )
+}
 
 function AuthStack() {
   return (
@@ -92,11 +139,12 @@ function MainTabs() {
       }}
     >
       <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Inicio' }} />
+      <Tab.Screen name="Schemas" component={SchemasStack} options={{ title: 'Esquemas', headerShown: false }} />
+      <Tab.Screen name="Brands" component={BrandsStack} options={{ title: 'Marcas', headerShown: false }} />
+      <Tab.Screen name="Guides" component={GuidesStack} options={{ title: 'Guías', headerShown: false }} />
       <Tab.Screen name="Marketplace" component={MarketplaceScreen} options={{ title: 'Marketplace' }} />
-      <Tab.Screen name="Quotes" component={QuotesScreen} options={{ title: 'Presupuestos' }} />
-      <Tab.Screen name="Manuals" component={ManualsScreen} options={{ title: 'Manuales' }} />
       {showDesigns && (
-        <Tab.Screen name="Designs" component={Design3DScreen} options={{ title: 'Disenos 3D' }} />
+        <Tab.Screen name="Designs" component={Design3DScreen} options={{ title: 'Diseños 3D' }} />
       )}
       {showPanel && (
         <Tab.Screen name="Panel" component={PanelStack} options={{ title: 'Panel', headerShown: false }} />
@@ -125,6 +173,16 @@ function MainStack() {
           headerShadowVisible: false,
           title: 'Suscripciones',
         }}
+      />
+      <Stack.Screen
+        name="Quotes"
+        component={QuotesScreen}
+        options={{ ...contentHeaderStyle, headerShown: true, title: 'Presupuestos' }}
+      />
+      <Stack.Screen
+        name="Manuals"
+        component={ManualsScreen}
+        options={{ ...contentHeaderStyle, headerShown: true, title: 'Manuales' }}
       />
     </Stack.Navigator>
   )
