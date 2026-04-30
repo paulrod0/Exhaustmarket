@@ -141,6 +141,31 @@ export interface ExhaustComponent {
   temp: string
   description: string
   tip?: string
+  // Campos técnicos para profesionales (todos opcionales)
+  oem_ref?: string                       // Ej: "60666107"
+  diameter_mm?: number                   // Ej: 63.5
+  thickness_mm?: number                  // Ej: 1.5
+  fabrication_hours?: number             // Ej: 3.5
+  material_cost?: number                 // €
+  total_cost?: number                    // €
+  difficulty?: 'baja' | 'media' | 'alta'
+  fabricable?: boolean                   // si es fabricable o solo OEM/aftermarket
+}
+
+export interface DespieceItem {
+  element: string                        // "Cuerpo silenciador"
+  material: string                       // "Acero inox 304"
+  specification: string                  // "chapa 1.5 mm"
+  quantity: string                       // "1 ud"
+  process: string                        // "Corte y plegado"
+}
+
+export interface CostBreakdown {
+  materials?: number
+  consumables?: number
+  labor?: number
+  hours?: number
+  currency?: string                      // "EUR" por defecto
 }
 
 export interface ExhaustSchemaRecord {
@@ -159,6 +184,14 @@ export interface ExhaustSchemaRecord {
   is_active: boolean
   /** Array vacío = público. Si tiene valores, solo esos tiers tienen acceso completo. */
   allowed_tiers: string[]
+  // Campos del dossier técnico
+  despiece: DespieceItem[]
+  cost_breakdown: CostBreakdown
+  reference_photos: string[]
+  related_video_url: string | null
+  total_estimated_hours: number | null
+  total_estimated_cost: number | null
+  total_materials_count: number | null
   created_at: string
 }
 

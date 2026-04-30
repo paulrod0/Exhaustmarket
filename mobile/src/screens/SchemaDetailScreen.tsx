@@ -83,6 +83,19 @@ export default function SchemaDetailScreen({ route, navigation }: any) {
   const components = Object.values(schema.components ?? {})
   const selected = selectedComp ? schema.components[selectedComp] : null
 
+  // Stats agregadas para los stat cards
+  const componentsCount = components.length
+  const materialsCount =
+    schema.total_materials_count ??
+    new Set(components.map((c) => c.material).filter(Boolean)).size
+  const totalHours =
+    schema.total_estimated_hours ??
+    components.reduce((s, c) => s + (c.fabrication_hours ?? 0), 0)
+  const totalCost =
+    schema.total_estimated_cost ??
+    components.reduce((s, c) => s + (c.total_cost ?? c.material_cost ?? 0), 0)
+  const breakdown = schema.cost_breakdown ?? {}
+
   return (
     <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
       {/* Header info */}
@@ -106,6 +119,23 @@ export default function SchemaDetailScreen({ route, navigation }: any) {
             <Stat label="Arquitectura" value={LAYOUT_LABEL[schema.layout]} />
           </View>
           {schema.note && <Text style={styles.note}>{schema.note}</Text>}
+
+          {/* Stats cards: componentes / materiales / horas / coste */}
+          <View style={styles.statCardsRow}>
+            <StatCard label="Componentes" value={String(componentsCount)} accent="#0071E3" />
+            <StatCard label="Materiales" value={String(materialsCount)} accent="#34C759" />
+            <StatCard
+              label="Horas est."
+              value={totalHours > 0 ? `${totalHours.toFixed(1)} h` : '—'}
+              accent="#FF9500"
+            />
+            <StatCard
+              label="Coste total"
+              value={totalCost > 0 ? `${totalCost.toFixed(0)} €` : '—'}
+              accent={schema.color}
+              highlight
+            />
+          </View>
         </View>
       </View>
 
@@ -184,6 +214,105 @@ export default function SchemaDetailScreen({ route, navigation }: any) {
         </View>
       )}
 
+      {/* Despiece A */}
+      {authorized && schema.despiece && schema.despiece.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>A. Despiece / Material necesario</Text>
+          <View style={{ gap: 6 }}>
+            {schema.despiece.map((d, i) => (
+              <View key={i} style={styles.despieceRow}>
+                <Text style={styles.despieceElement}>{d.element}</Text>
+                <Text style={styles.despieceMeta}>
+                  {d.material} · {d.specification}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+                  <Text style={styles.despieceTag}>📦 {d.quantity}</Text>
+                  <Text style={styles.despieceTag}>⚙️ {d.process}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* Costes B */}
+      {authorized && (breakdown.materials != null || breakdown.labor != null || breakdown.consumables != null || breakdown.hours != null) && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>B. Estimación de costes y horas</Text>
+          {breakdown.materials != null && (
+            <CostRow label="Materiales" value={`${breakdown.materials} €`} color="#0071E3" />
+          )}
+          {breakdown.consumables != null && (
+            <CostRow label="Consumibles" value={`${breakdown.consumables} €`} color="#86868B" />
+          )}
+          {breakdown.labor != null && (
+            <CostRow label="Mano de obra" value={`${breakdown.labor} €`} color="#FF9500" />
+          )}
+          {breakdown.hours != null && (
+            <CostRow label="Horas estimadas" value={`${breakdown.hours} h`} color="#34C759" />
+          )}
+          {((breakdown.materials ?? 0) + (breakdown.consumables ?? 0) + (breakdown.labor ?? 0)) > 0 && (
+            <View style={styles.costTotal}>
+              <Text style={styles.costTotalLabel}>Total estimado</Text>
+              <Text style={[styles.costTotalValue, { color: schema.color }]}>
+                {(breakdown.materials ?? 0) + (breakdown.consumables ?? 0) + (breakdown.labor ?? 0)} €
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* OEM C */}
+      {authorized && components.some((c) => c.oem_ref) && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>C. Referencias OEM por componente</Text>
+          {components.filter((c) => c.oem_ref).map((c) => (
+            <TouchableOpacity
+              key={c.id}
+              style={styles.oemRow}
+              onPress={() => setSelectedComp(c.id)}
+            >
+              <Text style={styles.oemName}>{c.name}</Text>
+              <Text style={[styles.oemRef, { color: schema.color }]}>{c.oem_ref}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* Fotos técnicas D */}
+      {authorized && schema.reference_photos && schema.reference_photos.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>D. Fotos de referencia</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+            {schema.reference_photos.map((url, i) => (
+              <Image key={i} source={{ uri: url }} style={styles.refPhoto} />
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Vídeo E */}
+      {authorized && schema.related_video_url && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>E. Vídeo de instalación</Text>
+          <TouchableOpacity
+            style={styles.videoLink}
+            onPress={() => {
+              if (schema.related_video_url) {
+                require('react-native').Linking.openURL(schema.related_video_url).catch(() => {})
+              }
+            }}
+          >
+            <Text style={styles.videoLinkEmoji}>▶</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.videoLinkTitle}>Ver vídeo en navegador</Text>
+              <Text style={styles.videoLinkSub}>YouTube / Vimeo</Text>
+            </View>
+            <Text style={{ color: '#FFFFFF' }}>→</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Marcas recomendadas */}
       {brands.length > 0 && (
         <View style={styles.section}>
@@ -253,24 +382,71 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 function ComponentDetail({ comp, color }: { comp: ExhaustComponent; color: string }) {
+  const rows: Array<{ label: string; value: string }> = []
+  if (comp.oem_ref) rows.push({ label: 'Referencia OEM', value: comp.oem_ref })
+  if (comp.material) rows.push({ label: 'Material principal', value: comp.material })
+  if (comp.diameter_mm != null) rows.push({ label: 'Diámetro tubo', value: `${comp.diameter_mm} mm` })
+  if (comp.thickness_mm != null) rows.push({ label: 'Espesor', value: `${comp.thickness_mm} mm` })
+  if (comp.fabrication_hours != null) rows.push({ label: 'Tiempo fabricación', value: `${comp.fabrication_hours} h` })
+  if (comp.material_cost != null) rows.push({ label: 'Coste material', value: `${comp.material_cost} €` })
+  if (comp.temp) rows.push({ label: 'Temperatura', value: comp.temp })
+
   return (
     <View style={[styles.compDetail, { borderColor: color + '40' }]}>
-      <View style={[styles.compDetailHeader, { backgroundColor: color }]}>
+      <View style={[styles.compDetailHeader, { backgroundColor: color, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }]}>
         <Text style={styles.compDetailTitle}>{comp.name}</Text>
+        {comp.fabricable && (
+          <View style={{ backgroundColor: 'rgba(255,255,255,0.25)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 980 }}>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF' }}>Fabricable</Text>
+          </View>
+        )}
       </View>
       <View style={styles.compDetailBody}>
-        <View style={styles.compMetaRow}>
-          <View style={styles.compMetaCell}>
-            <Text style={styles.compMetaLabel}>Material</Text>
-            <Text style={styles.compMetaValue}>{comp.material || '—'}</Text>
+        {rows.map((r, i) => (
+          <View key={i} style={styles.fichaRow}>
+            <Text style={styles.fichaLabel}>{r.label}</Text>
+            <Text style={[styles.fichaValue, r.label === 'Referencia OEM' && { fontFamily: 'Courier' }]}>
+              {r.value}
+            </Text>
           </View>
-          <View style={styles.compMetaCell}>
-            <Text style={styles.compMetaLabel}>Temperatura</Text>
-            <Text style={styles.compMetaValue}>{comp.temp || '—'}</Text>
+        ))}
+
+        {comp.total_cost != null && (
+          <View style={styles.fichaTotal}>
+            <Text style={styles.fichaTotalLabel}>Coste total estimado</Text>
+            <Text style={[styles.fichaTotalValue, { color }]}>{comp.total_cost} €</Text>
           </View>
-        </View>
+        )}
+
+        {comp.difficulty && (
+          <View style={styles.fichaRow}>
+            <Text style={styles.fichaLabel}>Dificultad</Text>
+            <View
+              style={{
+                paddingHorizontal: 8,
+                paddingVertical: 3,
+                borderRadius: 980,
+                backgroundColor:
+                  comp.difficulty === 'baja' ? '#D1F7D1' : comp.difficulty === 'media' ? '#FFF7E5' : '#FFE5E7',
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 11,
+                  fontWeight: '700',
+                  color:
+                    comp.difficulty === 'baja' ? '#1A8C1A' : comp.difficulty === 'media' ? '#B25400' : '#D70015',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {comp.difficulty}
+              </Text>
+            </View>
+          </View>
+        )}
+
         {comp.description && (
-          <View style={styles.compBlock}>
+          <View style={[styles.compBlock, { marginTop: 10 }]}>
             <Text style={styles.compBlockLabel}>Descripción</Text>
             <Text style={styles.compBlockText}>{comp.description}</Text>
           </View>
@@ -282,6 +458,40 @@ function ComponentDetail({ comp, color }: { comp: ExhaustComponent; color: strin
           </View>
         )}
       </View>
+    </View>
+  )
+}
+
+function StatCard({
+  label,
+  value,
+  accent,
+  highlight = false,
+}: {
+  label: string
+  value: string
+  accent: string
+  highlight?: boolean
+}) {
+  return (
+    <View
+      style={[
+        styles.statCard,
+        highlight && { backgroundColor: `${accent}10`, borderColor: `${accent}40` },
+      ]}
+    >
+      <Text style={[styles.statCardValue, { color: accent }]}>{value}</Text>
+      <Text style={styles.statLabelMobile}>{label}</Text>
+    </View>
+  )
+}
+
+function CostRow({ label, value, color }: { label: string; value: string; color: string }) {
+  return (
+    <View style={styles.costRow}>
+      <View style={[styles.costDot, { backgroundColor: color }]} />
+      <Text style={styles.costRowLabel}>{label}</Text>
+      <Text style={styles.costRowValue}>{value}</Text>
     </View>
   )
 }
@@ -384,6 +594,108 @@ const styles = StyleSheet.create({
   compBlock: { backgroundColor: '#F5F5F7', padding: 12, borderRadius: 10 },
   compBlockLabel: { fontSize: 10, fontWeight: '600', color: '#86868B', letterSpacing: 0.5 },
   compBlockText: { fontSize: 14, color: '#1D1D1F', lineHeight: 20, marginTop: 4 },
+  // Stats cards
+  statCardsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  statCard: {
+    flexGrow: 1,
+    minWidth: '47%',
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1,
+    borderColor: '#F2F2F7',
+    borderRadius: 12,
+    padding: 12,
+  },
+  statCardValue: { fontSize: 20, fontWeight: '700', letterSpacing: -0.5 },
+  statLabelMobile: { fontSize: 11, color: '#86868B', marginTop: 2 },
+  // Ficha técnica rows
+  fichaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F2F2F7',
+  },
+  fichaLabel: { fontSize: 12, color: '#86868B' },
+  fichaValue: { fontSize: 13, fontWeight: '500', color: '#1D1D1F' },
+  fichaTotal: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F2F2F7',
+    marginTop: 4,
+  },
+  fichaTotalLabel: { fontSize: 12, color: '#86868B' },
+  fichaTotalValue: { fontSize: 22, fontWeight: '700', letterSpacing: -0.5 },
+  // Despiece A
+  despieceRow: {
+    backgroundColor: '#FAFAFA',
+    borderRadius: 10,
+    padding: 12,
+  },
+  despieceElement: { fontSize: 14, fontWeight: '600', color: '#1D1D1F' },
+  despieceMeta: { fontSize: 12, color: '#86868B', marginTop: 2 },
+  despieceTag: { fontSize: 11, color: '#1D1D1F' },
+  // Costes B
+  costRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    gap: 10,
+  },
+  costDot: { width: 8, height: 8, borderRadius: 4 },
+  costRowLabel: { flex: 1, fontSize: 13, color: '#1D1D1F' },
+  costRowValue: { fontSize: 13, fontWeight: '600', color: '#1D1D1F' },
+  costTotal: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F2F2F7',
+    marginTop: 8,
+  },
+  costTotalLabel: { fontSize: 13, fontWeight: '600', color: '#1D1D1F' },
+  costTotalValue: { fontSize: 22, fontWeight: '700', letterSpacing: -0.5 },
+  // OEM C
+  oemRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FAFAFA',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 6,
+  },
+  oemName: { fontSize: 13, color: '#1D1D1F' },
+  oemRef: { fontSize: 12, fontFamily: 'Courier', fontWeight: '600' },
+  // Fotos D
+  refPhoto: {
+    width: 180,
+    height: 135,
+    borderRadius: 10,
+    backgroundColor: '#F5F5F7',
+    marginRight: 6,
+  },
+  // Vídeo E
+  videoLink: {
+    backgroundColor: '#0071E3',
+    borderRadius: 14,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  videoLinkEmoji: { color: '#FFFFFF', fontSize: 22 },
+  videoLinkTitle: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
+  videoLinkSub: { color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 2 },
   brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
