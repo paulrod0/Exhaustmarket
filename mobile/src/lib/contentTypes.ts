@@ -119,6 +119,30 @@ export interface ExhaustComponent {
   temp: string
   description: string
   tip?: string
+  oem_ref?: string
+  diameter_mm?: number
+  thickness_mm?: number
+  fabrication_hours?: number
+  material_cost?: number
+  total_cost?: number
+  difficulty?: 'baja' | 'media' | 'alta'
+  fabricable?: boolean
+}
+
+export interface DespieceItem {
+  element: string
+  material: string
+  specification: string
+  quantity: string
+  process: string
+}
+
+export interface CostBreakdown {
+  materials?: number
+  consumables?: number
+  labor?: number
+  hours?: number
+  currency?: string
 }
 
 export interface ExhaustSchemaRecord {
@@ -136,6 +160,13 @@ export interface ExhaustSchemaRecord {
   gallery_urls: string[]
   is_active: boolean
   allowed_tiers: string[]
+  despiece?: DespieceItem[]
+  cost_breakdown?: CostBreakdown
+  reference_photos?: string[]
+  related_video_url?: string | null
+  total_estimated_hours?: number | null
+  total_estimated_cost?: number | null
+  total_materials_count?: number | null
   created_at: string
 }
 

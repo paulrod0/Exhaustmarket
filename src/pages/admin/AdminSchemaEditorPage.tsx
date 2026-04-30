@@ -9,6 +9,8 @@ import {
   type ExhaustComponent,
   type ExhaustSchemaRecord,
   type Layout,
+  type DespieceItem,
+  type CostBreakdown,
 } from '../../lib/schemaDefinitions'
 import PhotoUploader from '../../components/admin/PhotoUploader'
 import BrandSuggestionsPicker from '../../components/admin/BrandSuggestionsPicker'
@@ -31,6 +33,11 @@ interface FormState {
   gallery_urls: string[]
   is_active: boolean
   allowed_tiers: string[]
+  // Dossier técnico
+  despiece: DespieceItem[]
+  cost_breakdown: CostBreakdown
+  reference_photos: string[]
+  related_video_url: string
 }
 
 const DEFAULT_LAYOUT: Layout = 'v8tt'
@@ -49,6 +56,10 @@ const emptyState = (): FormState => ({
   gallery_urls: [],
   is_active: true,
   allowed_tiers: [],
+  despiece: [],
+  cost_breakdown: {},
+  reference_photos: [],
+  related_video_url: '',
 })
 
 export default function AdminSchemaEditorPage() {
@@ -94,6 +105,10 @@ export default function AdminSchemaEditorPage() {
           gallery_urls: row.gallery_urls ?? [],
           is_active: row.is_active,
           allowed_tiers: row.allowed_tiers ?? [],
+          despiece: row.despiece ?? [],
+          cost_breakdown: row.cost_breakdown ?? {},
+          reference_photos: row.reference_photos ?? [],
+          related_video_url: row.related_video_url ?? '',
         })
       }
       setLoading(false)
@@ -149,6 +164,10 @@ export default function AdminSchemaEditorPage() {
       gallery_urls: form.gallery_urls,
       is_active: form.is_active,
       allowed_tiers: form.allowed_tiers,
+      despiece: form.despiece,
+      cost_breakdown: form.cost_breakdown,
+      reference_photos: form.reference_photos,
+      related_video_url: form.related_video_url.trim() || null,
     }
 
     if (isNew) {
@@ -210,6 +229,10 @@ export default function AdminSchemaEditorPage() {
       gallery_urls: [],
       is_active: false, // empieza como borrador
       allowed_tiers: src.allowed_tiers ?? [],
+      despiece: src.despiece ?? [],
+      cost_breakdown: src.cost_breakdown ?? {},
+      reference_photos: src.reference_photos ?? [],
+      related_video_url: src.related_video_url ?? '',
     })
     toast.success(`Plantilla de ${src.brand} ${src.model} aplicada. Cambia el modelo y guarda.`)
   }
@@ -612,11 +635,269 @@ export default function AdminSchemaEditorPage() {
                       placeholder="Akrapovic es el proveedor OEM de Lamborghini…"
                     />
                   </Field>
+
+                  {/* Datos técnicos para profesionales */}
+                  <div
+                    style={{
+                      marginTop: 12,
+                      padding: 12,
+                      backgroundColor: '#FAFAFA',
+                      borderRadius: 8,
+                    }}
+                  >
+                    <p
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        color: '#86868B',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                        margin: '0 0 10px',
+                      }}
+                    >
+                      Datos técnicos para profesionales
+                    </p>
+                    <Grid>
+                      <Field label="Referencia OEM">
+                        <input
+                          style={inputStyle}
+                          value={comp.oem_ref ?? ''}
+                          onChange={(e) => updateComponent(c.id, { oem_ref: e.target.value })}
+                          placeholder="60666107"
+                        />
+                      </Field>
+                      <Field label="Diámetro tubo (mm)">
+                        <input
+                          type="number"
+                          step="0.1"
+                          style={inputStyle}
+                          value={comp.diameter_mm ?? ''}
+                          onChange={(e) =>
+                            updateComponent(c.id, {
+                              diameter_mm: e.target.value ? parseFloat(e.target.value) : undefined,
+                            })
+                          }
+                          placeholder="63.5"
+                        />
+                      </Field>
+                      <Field label="Espesor (mm)">
+                        <input
+                          type="number"
+                          step="0.1"
+                          style={inputStyle}
+                          value={comp.thickness_mm ?? ''}
+                          onChange={(e) =>
+                            updateComponent(c.id, {
+                              thickness_mm: e.target.value ? parseFloat(e.target.value) : undefined,
+                            })
+                          }
+                          placeholder="1.5"
+                        />
+                      </Field>
+                      <Field label="Tiempo fabricación (h)">
+                        <input
+                          type="number"
+                          step="0.25"
+                          style={inputStyle}
+                          value={comp.fabrication_hours ?? ''}
+                          onChange={(e) =>
+                            updateComponent(c.id, {
+                              fabrication_hours: e.target.value ? parseFloat(e.target.value) : undefined,
+                            })
+                          }
+                          placeholder="3.5"
+                        />
+                      </Field>
+                      <Field label="Coste material (€)">
+                        <input
+                          type="number"
+                          step="0.01"
+                          style={inputStyle}
+                          value={comp.material_cost ?? ''}
+                          onChange={(e) =>
+                            updateComponent(c.id, {
+                              material_cost: e.target.value ? parseFloat(e.target.value) : undefined,
+                            })
+                          }
+                          placeholder="148"
+                        />
+                      </Field>
+                      <Field label="Coste total estimado (€)">
+                        <input
+                          type="number"
+                          step="0.01"
+                          style={inputStyle}
+                          value={comp.total_cost ?? ''}
+                          onChange={(e) =>
+                            updateComponent(c.id, {
+                              total_cost: e.target.value ? parseFloat(e.target.value) : undefined,
+                            })
+                          }
+                          placeholder="322"
+                        />
+                      </Field>
+                      <Field label="Dificultad">
+                        <select
+                          style={inputStyle}
+                          value={comp.difficulty ?? ''}
+                          onChange={(e) =>
+                            updateComponent(c.id, {
+                              difficulty: (e.target.value || undefined) as 'baja' | 'media' | 'alta' | undefined,
+                            })
+                          }
+                        >
+                          <option value="">(sin definir)</option>
+                          <option value="baja">Baja</option>
+                          <option value="media">Media</option>
+                          <option value="alta">Alta</option>
+                        </select>
+                      </Field>
+                      <Field label="¿Es fabricable?">
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '8px 0' }}>
+                          <input
+                            type="checkbox"
+                            checked={comp.fabricable ?? false}
+                            onChange={(e) => updateComponent(c.id, { fabricable: e.target.checked })}
+                          />
+                          <span style={{ fontSize: 13 }}>
+                            {comp.fabricable ? 'Sí, fabricable' : 'No (solo OEM/aftermarket)'}
+                          </span>
+                        </label>
+                      </Field>
+                    </Grid>
+                  </div>
                 </div>
               </details>
             )
           })}
         </div>
+      </Section>
+
+      {/* Sección 4: Despiece (tabla A) */}
+      <Section
+        title="A. Despiece / Material necesario"
+        subtitle="Lista detallada de elementos a fabricar (cuerpos, tubos, soportes…). Aparece como tabla en la ficha pública."
+      >
+        <DespieceEditor
+          items={form.despiece}
+          onChange={(next) => setForm({ ...form, despiece: next })}
+        />
+      </Section>
+
+      {/* Sección 5: Estimación de costes (sección B) */}
+      <Section
+        title="B. Estimación de costes y horas"
+        subtitle="Resumen de coste total del sistema. Puede dejarse en blanco si los componentes ya tienen sus costes individuales."
+      >
+        <Grid>
+          <Field label="Materiales (€)">
+            <input
+              type="number"
+              step="0.01"
+              style={inputStyle}
+              value={form.cost_breakdown.materials ?? ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  cost_breakdown: {
+                    ...form.cost_breakdown,
+                    materials: e.target.value ? parseFloat(e.target.value) : undefined,
+                  },
+                })
+              }
+              placeholder="148"
+            />
+          </Field>
+          <Field label="Consumibles (€)">
+            <input
+              type="number"
+              step="0.01"
+              style={inputStyle}
+              value={form.cost_breakdown.consumables ?? ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  cost_breakdown: {
+                    ...form.cost_breakdown,
+                    consumables: e.target.value ? parseFloat(e.target.value) : undefined,
+                  },
+                })
+              }
+              placeholder="24"
+            />
+          </Field>
+          <Field label="Mano de obra (€)">
+            <input
+              type="number"
+              step="0.01"
+              style={inputStyle}
+              value={form.cost_breakdown.labor ?? ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  cost_breakdown: {
+                    ...form.cost_breakdown,
+                    labor: e.target.value ? parseFloat(e.target.value) : undefined,
+                  },
+                })
+              }
+              placeholder="150"
+            />
+          </Field>
+          <Field label="Horas estimadas">
+            <input
+              type="number"
+              step="0.25"
+              style={inputStyle}
+              value={form.cost_breakdown.hours ?? ''}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  cost_breakdown: {
+                    ...form.cost_breakdown,
+                    hours: e.target.value ? parseFloat(e.target.value) : undefined,
+                  },
+                })
+              }
+              placeholder="3.5"
+            />
+          </Field>
+        </Grid>
+      </Section>
+
+      {/* Sección 6: Vídeo y fotos técnicas */}
+      <Section
+        title="D + E. Fotos técnicas y vídeo"
+        subtitle="Imágenes del montaje real (sección D) y URL de YouTube/Vimeo del tutorial (sección E)."
+      >
+        <Field label="URL de vídeo (YouTube / Vimeo)">
+          <input
+            style={inputStyle}
+            value={form.related_video_url}
+            onChange={(e) => setForm({ ...form, related_video_url: e.target.value })}
+            placeholder="https://www.youtube.com/watch?v=..."
+          />
+        </Field>
+        <Field label="Fotos técnicas (URLs separadas por línea)">
+          <textarea
+            style={{ ...inputStyle, minHeight: 80, resize: 'vertical', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
+            value={(form.reference_photos ?? []).join('\n')}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                reference_photos: e.target.value
+                  .split('\n')
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              })
+            }
+            placeholder={'https://imagen-1.jpg\nhttps://imagen-2.jpg'}
+          />
+        </Field>
+        <p style={{ fontSize: 11, color: '#86868B', margin: '6px 0 0' }}>
+          Las fotos técnicas son adicionales a la galería principal. Pega las URLs públicas (Supabase Storage,
+          Cloudinary, Google Drive con permiso público, etc.).
+        </p>
       </Section>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
@@ -731,4 +1012,140 @@ const inputStyle: React.CSSProperties = {
   outline: 'none',
   backgroundColor: '#FFFFFF',
   fontFamily: 'inherit',
+}
+
+// ─── DespieceEditor ──────────────────────────────────────────────────────────
+
+function DespieceEditor({
+  items,
+  onChange,
+}: {
+  items: DespieceItem[]
+  onChange: (next: DespieceItem[]) => void
+}) {
+  function update(i: number, patch: Partial<DespieceItem>) {
+    onChange(items.map((it, idx) => (idx === i ? { ...it, ...patch } : it)))
+  }
+  function remove(i: number) {
+    onChange(items.filter((_, idx) => idx !== i))
+  }
+  function add() {
+    onChange([
+      ...items,
+      { element: '', material: '', specification: '', quantity: '', process: '' },
+    ])
+  }
+
+  return (
+    <div>
+      {items.length === 0 && (
+        <p style={{ fontSize: 12, color: '#86868B', margin: '4px 0 12px' }}>
+          Añade los elementos a fabricar (cuerpos, tubos, soportes…). Cada fila es un material o pieza
+          necesaria para construir el sistema.
+        </p>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {items.map((it, i) => (
+          <div
+            key={i}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, 1fr) 32px',
+              gap: 6,
+              alignItems: 'center',
+            }}
+          >
+            <input
+              style={{ ...inputStyle, fontSize: 12 }}
+              value={it.element}
+              onChange={(e) => update(i, { element: e.target.value })}
+              placeholder="Cuerpo silenciador"
+            />
+            <input
+              style={{ ...inputStyle, fontSize: 12 }}
+              value={it.material}
+              onChange={(e) => update(i, { material: e.target.value })}
+              placeholder="Acero inox 304"
+            />
+            <input
+              style={{ ...inputStyle, fontSize: 12 }}
+              value={it.specification}
+              onChange={(e) => update(i, { specification: e.target.value })}
+              placeholder="chapa 1.5 mm"
+            />
+            <input
+              style={{ ...inputStyle, fontSize: 12 }}
+              value={it.quantity}
+              onChange={(e) => update(i, { quantity: e.target.value })}
+              placeholder="1 ud"
+            />
+            <input
+              style={{ ...inputStyle, fontSize: 12 }}
+              value={it.process}
+              onChange={(e) => update(i, { process: e.target.value })}
+              placeholder="Corte y plegado"
+            />
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 6,
+                border: 'none',
+                backgroundColor: '#FFE5E7',
+                color: '#D70015',
+                cursor: 'pointer',
+                fontSize: 14,
+              }}
+              aria-label="Eliminar fila"
+            >
+              ×
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={add}
+        style={{
+          marginTop: 10,
+          padding: '8px 14px',
+          backgroundColor: '#FFFFFF',
+          border: '1.5px dashed #D2D2D7',
+          borderRadius: 8,
+          color: '#0071E3',
+          fontSize: 13,
+          fontWeight: 500,
+          cursor: 'pointer',
+          width: '100%',
+        }}
+      >
+        + Añadir fila
+      </button>
+      {items.length > 0 && (
+        <div
+          style={{
+            marginTop: 8,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(5, 1fr) 32px',
+            gap: 6,
+            fontSize: 10,
+            fontWeight: 600,
+            color: '#86868B',
+            textTransform: 'uppercase',
+            letterSpacing: 0.5,
+            padding: '0 4px',
+          }}
+        >
+          <span>Elemento</span>
+          <span>Material</span>
+          <span>Especificación</span>
+          <span>Cantidad</span>
+          <span>Proceso</span>
+          <span />
+        </div>
+      )}
+    </div>
+  )
 }

@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Thermometer, Layers, Info, ChevronRight, X, Search } from 'lucide-react'
+import { Thermometer, Layers, Info, ChevronRight, X, Search, Box, Clock, Euro, Hash, Camera, Play } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import { canViewTiers } from '../lib/contentTypes'
 import SchemaRelatedPanel from '../components/SchemaRelatedPanel'
 import TierBadge from '../components/TierBadge'
 import UpgradeCallout from '../components/UpgradeCallout'
+import VideoEmbed from '../components/VideoEmbed'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,9 +17,33 @@ interface Component {
   temp: string
   description: string
   tip?: string
+  oem_ref?: string
+  diameter_mm?: number
+  thickness_mm?: number
+  fabrication_hours?: number
+  material_cost?: number
+  total_cost?: number
+  difficulty?: 'baja' | 'media' | 'alta'
+  fabricable?: boolean
 }
 
 type Layout = 'v8tt' | 'v10na' | 'flat6na' | 'i6tt' | 'v12na' | 'flat6tt' | 'v8na'
+
+interface DespieceItem {
+  element: string
+  material: string
+  specification: string
+  quantity: string
+  process: string
+}
+
+interface CostBreakdown {
+  materials?: number
+  consumables?: number
+  labor?: number
+  hours?: number
+  currency?: string
+}
 
 interface CarSchema {
   id: string
@@ -34,6 +59,13 @@ interface CarSchema {
   cover_url?: string | null
   gallery_urls?: string[] | null
   allowed_tiers?: string[] | null
+  despiece?: DespieceItem[] | null
+  cost_breakdown?: CostBreakdown | null
+  reference_photos?: string[] | null
+  related_video_url?: string | null
+  total_estimated_hours?: number | null
+  total_estimated_cost?: number | null
+  total_materials_count?: number | null
 }
 
 // ─── SVG helpers ──────────────────────────────────────────────────────────────
@@ -681,60 +713,150 @@ export default function ExhaustSchemasPage() {
 
       {car && (
         <>
-          {/* Car info strip */}
-          <div
-            style={{
-              backgroundColor: '#FFFFFF',
-              border: '1px solid #F2F2F7',
-              borderRadius: '14px',
-              padding: '16px 20px',
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              flexWrap: 'wrap',
-              gap: '12px',
-            }}
-          >
-            <div>
-              <p style={{ fontSize: '19px', fontWeight: 600, color: '#1D1D1F', margin: 0, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={{ color: car.color }}>●</span> {car.brand} {car.model}
-                <TierBadge
-                  allowedTiers={car.allowed_tiers ?? []}
-                  locked={!canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin)}
-                  size="sm"
-                />
-              </p>
-              <p style={{ fontSize: '13px', color: '#86868B', margin: '2px 0 0' }}>{car.year}</p>
-            </div>
-            <div style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: '11px', color: '#86868B', margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Motor</p>
-                <p style={{ fontSize: '13px', fontWeight: 500, color: '#1D1D1F', margin: '2px 0 0' }}>{car.engine}</p>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: '11px', color: '#86868B', margin: 0, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Potencia</p>
-                <p style={{ fontSize: '13px', fontWeight: 500, color: '#1D1D1F', margin: '2px 0 0' }}>{car.power}</p>
-              </div>
-            </div>
-            {car.note && (
+          {(() => {
+            // Cálculos derivados para los stats cards
+            const componentsArr = Object.values(car.components ?? {})
+            const componentsCount = componentsArr.length
+            const materialsCount =
+              car.total_materials_count ??
+              new Set(componentsArr.map((c) => c.material).filter(Boolean)).size
+            const totalHours =
+              car.total_estimated_hours ??
+              componentsArr.reduce((s, c) => s + (c.fabrication_hours ?? 0), 0)
+            const totalCost =
+              car.total_estimated_cost ??
+              componentsArr.reduce((s, c) => s + (c.total_cost ?? c.material_cost ?? 0), 0)
+
+            return (
               <div
                 style={{
-                  backgroundColor: `${car.color}12`,
-                  border: `1px solid ${car.color}30`,
-                  borderRadius: '8px',
-                  padding: '8px 12px',
-                  fontSize: '12px',
-                  color: '#1D1D1F',
-                  maxWidth: '320px',
-                  lineHeight: 1.4,
+                  backgroundColor: '#FFFFFF',
+                  border: '1px solid #F2F2F7',
+                  borderRadius: '16px',
+                  padding: '20px 24px',
+                  marginBottom: '16px',
                 }}
               >
-                <Info size={12} style={{ display: 'inline', marginRight: '4px', color: car.color }} />
-                {car.note}
+                {/* Top: brand + name */}
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '16px',
+                    paddingBottom: '16px',
+                    borderBottom: '1px solid #F2F2F7',
+                    marginBottom: '16px',
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 48,
+                      height: 48,
+                      borderRadius: 12,
+                      backgroundColor: `${car.color}14`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span style={{ color: car.color, fontSize: 20, fontWeight: 700 }}>
+                      {car.brand[0]}
+                    </span>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h2
+                      style={{
+                        fontSize: 22,
+                        fontWeight: 700,
+                        color: '#1D1D1F',
+                        margin: 0,
+                        letterSpacing: '-0.02em',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      {car.brand} {car.model}
+                      <TierBadge
+                        allowedTiers={car.allowed_tiers ?? []}
+                        locked={!canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin)}
+                        size="sm"
+                      />
+                    </h2>
+                    <p style={{ fontSize: 12, color: '#86868B', margin: '2px 0 0' }}>
+                      {car.year}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                    <div>
+                      <p style={dossierMetaLabel}>Motor</p>
+                      <p style={dossierMetaValue}>{car.engine}</p>
+                    </div>
+                    <div>
+                      <p style={dossierMetaLabel}>Potencia</p>
+                      <p style={dossierMetaValue}>{car.power}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stats cards */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                    gap: 10,
+                  }}
+                >
+                  <DossierStat
+                    icon={<Box size={16} />}
+                    label="componentes"
+                    value={componentsCount.toString()}
+                    accent="#0071E3"
+                  />
+                  <DossierStat
+                    icon={<Layers size={16} />}
+                    label="materiales"
+                    value={materialsCount.toString()}
+                    accent="#34C759"
+                  />
+                  <DossierStat
+                    icon={<Clock size={16} />}
+                    label="estimadas"
+                    value={totalHours > 0 ? `${totalHours.toFixed(1)} h` : '—'}
+                    accent="#FF9500"
+                  />
+                  <DossierStat
+                    icon={<Euro size={16} />}
+                    label="total sistema"
+                    value={totalCost > 0 ? `${totalCost.toFixed(0)} €` : '—'}
+                    accent="#FFD700"
+                    highlight
+                  />
+                </div>
+
+                {car.note && (
+                  <div
+                    style={{
+                      marginTop: 12,
+                      backgroundColor: `${car.color}10`,
+                      border: `1px solid ${car.color}30`,
+                      borderRadius: 10,
+                      padding: '10px 14px',
+                      fontSize: 13,
+                      color: '#1D1D1F',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    <Info size={13} style={{ display: 'inline', marginRight: 6, color: car.color, verticalAlign: 'middle' }} />
+                    {car.note}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            )
+          })()}
 
           {/* Photo gallery */}
           {(car.cover_url || (car.gallery_urls && car.gallery_urls.length > 0)) && (
@@ -866,25 +988,139 @@ export default function ExhaustSchemasPage() {
                   </button>
                 </div>
 
-                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <div style={{ backgroundColor: '#F5F5F7', borderRadius: '10px', padding: '12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
-                        <Thermometer size={12} style={{ color: '#FF3B30' }} />
-                        <span style={{ fontSize: '10px', color: '#86868B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Temperatura</span>
-                      </div>
-                      <p style={{ fontSize: '13px', fontWeight: 600, color: '#1D1D1F', margin: 0 }}>{component.temp}</p>
-                    </div>
-                    <div style={{ backgroundColor: '#F5F5F7', borderRadius: '10px', padding: '12px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
-                        <Layers size={12} style={{ color: '#0071E3' }} />
-                        <span style={{ fontSize: '10px', color: '#86868B', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Material</span>
-                      </div>
-                      <p style={{ fontSize: '12px', fontWeight: 500, color: '#1D1D1F', margin: 0, lineHeight: 1.3 }}>{component.material}</p>
-                    </div>
+                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  {/* Header con badge fabricable */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: '#86868B',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      Ficha técnica
+                    </span>
+                    {component.fabricable && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          backgroundColor: '#D1F7D1',
+                          color: '#1A8C1A',
+                          padding: '3px 8px',
+                          borderRadius: 980,
+                        }}
+                      >
+                        Fabricable
+                      </span>
+                    )}
                   </div>
 
-                  <p style={{ fontSize: '13px', lineHeight: 1.6, color: '#3A3A3C', margin: 0 }}>{component.description}</p>
+                  {/* Filas tipo "ficha de producto" */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                    {component.oem_ref && (
+                      <FichaRow
+                        icon={<Hash size={13} style={{ color: '#86868B' }} />}
+                        label="Referencia OEM"
+                        value={component.oem_ref}
+                        mono
+                      />
+                    )}
+                    <FichaRow
+                      icon={<Layers size={13} style={{ color: '#0071E3' }} />}
+                      label="Material principal"
+                      value={component.material || '—'}
+                    />
+                    {component.diameter_mm != null && (
+                      <FichaRow
+                        icon={<Box size={13} style={{ color: '#86868B' }} />}
+                        label="Diámetro tubo"
+                        value={`${component.diameter_mm} mm`}
+                      />
+                    )}
+                    {component.thickness_mm != null && (
+                      <FichaRow
+                        icon={<Layers size={13} style={{ color: '#86868B' }} />}
+                        label="Espesor"
+                        value={`${component.thickness_mm} mm`}
+                      />
+                    )}
+                    {component.fabrication_hours != null && (
+                      <FichaRow
+                        icon={<Clock size={13} style={{ color: '#FF9500' }} />}
+                        label="Tiempo fabricación"
+                        value={`${component.fabrication_hours} h`}
+                      />
+                    )}
+                    {component.material_cost != null && (
+                      <FichaRow
+                        icon={<Euro size={13} style={{ color: '#86868B' }} />}
+                        label="Coste material"
+                        value={`${component.material_cost} €`}
+                      />
+                    )}
+                    <FichaRow
+                      icon={<Thermometer size={13} style={{ color: '#FF3B30' }} />}
+                      label="Temperatura"
+                      value={component.temp || '—'}
+                    />
+                    {component.total_cost != null && (
+                      <div
+                        style={{
+                          padding: '12px 0',
+                          borderTop: '1px solid #F2F2F7',
+                          marginTop: 4,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <span style={{ fontSize: 12, color: '#86868B' }}>Coste total estimado</span>
+                        <span style={{ fontSize: 22, fontWeight: 700, color: car.color, letterSpacing: '-0.01em' }}>
+                          {component.total_cost} €
+                        </span>
+                      </div>
+                    )}
+                    {component.difficulty && (
+                      <FichaRow
+                        icon={null}
+                        label="Dificultad"
+                        valueEl={
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 600,
+                              padding: '3px 9px',
+                              borderRadius: 980,
+                              backgroundColor:
+                                component.difficulty === 'baja'
+                                  ? '#D1F7D1'
+                                  : component.difficulty === 'media'
+                                    ? '#FFF7E5'
+                                    : '#FFE5E7',
+                              color:
+                                component.difficulty === 'baja'
+                                  ? '#1A8C1A'
+                                  : component.difficulty === 'media'
+                                    ? '#B25400'
+                                    : '#D70015',
+                              textTransform: 'capitalize',
+                            }}
+                          >
+                            {component.difficulty}
+                          </span>
+                        }
+                      />
+                    )}
+                  </div>
+
+                  {component.description && (
+                    <p style={{ fontSize: 13, lineHeight: 1.6, color: '#3A3A3C', margin: 0 }}>
+                      {component.description}
+                    </p>
+                  )}
 
                   {component.tip && (
                     <div
@@ -941,6 +1177,155 @@ export default function ExhaustSchemasPage() {
             </div>
           )}
 
+          {/* Dossier técnico: secciones A, B, C, D, E */}
+          {canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin) && (
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))',
+                gap: 16,
+                marginTop: 24,
+              }}
+            >
+              {/* A. Despiece */}
+              {car.despiece && car.despiece.length > 0 && (
+                <DossierSection title="A. Despiece / Material necesario">
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          {['Elemento', 'Material', 'Especif.', 'Cantidad', 'Proceso'].map((h) => (
+                            <th
+                              key={h}
+                              style={{
+                                textAlign: 'left',
+                                padding: '8px 6px',
+                                borderBottom: '1.5px solid #D2D2D7',
+                                fontSize: 10,
+                                fontWeight: 600,
+                                color: '#86868B',
+                                textTransform: 'uppercase',
+                                letterSpacing: 0.5,
+                              }}
+                            >
+                              {h}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {car.despiece.map((d, i) => (
+                          <tr key={i}>
+                            <td style={tdStyle}>{d.element}</td>
+                            <td style={tdStyle}>{d.material}</td>
+                            <td style={tdStyle}>{d.specification}</td>
+                            <td style={tdStyle}>{d.quantity}</td>
+                            <td style={tdStyle}>{d.process}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </DossierSection>
+              )}
+
+              {/* B. Estimación de costes y horas */}
+              {car.cost_breakdown && Object.values(car.cost_breakdown).some((v) => v != null && v !== '') && (
+                <DossierSection title="B. Estimación de costes y horas">
+                  <CostBreakdownPanel breakdown={car.cost_breakdown} accent={car.color} />
+                </DossierSection>
+              )}
+
+              {/* C. Referencias OEM por componente */}
+              {Object.values(car.components).some((c) => c.oem_ref) && (
+                <DossierSection title="C. Referencias OEM por componente">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {Object.values(car.components)
+                      .filter((c) => c.oem_ref)
+                      .map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => setSelectedComponent(c.id)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            padding: '8px 10px',
+                            borderRadius: 8,
+                            border: 'none',
+                            cursor: 'pointer',
+                            backgroundColor: selectedComponent === c.id ? `${car.color}10` : 'transparent',
+                            textAlign: 'left',
+                            transition: 'background 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (selectedComponent !== c.id) e.currentTarget.style.backgroundColor = '#F5F5F7'
+                          }}
+                          onMouseLeave={(e) => {
+                            if (selectedComponent !== c.id) e.currentTarget.style.backgroundColor = 'transparent'
+                          }}
+                        >
+                          <span style={{ fontSize: 12, color: '#1D1D1F' }}>{c.name}</span>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontFamily: 'ui-monospace, monospace',
+                              color: selectedComponent === c.id ? car.color : '#86868B',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {c.oem_ref}
+                          </span>
+                        </button>
+                      ))}
+                  </div>
+                </DossierSection>
+              )}
+
+              {/* D. Fotos técnicas de referencia */}
+              {car.reference_photos && car.reference_photos.length > 0 && (
+                <DossierSection title="D. Fotos de referencia" icon={<Camera size={14} />}>
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))',
+                      gap: 6,
+                    }}
+                  >
+                    {car.reference_photos.map((url, i) => (
+                      <a
+                        key={i}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          aspectRatio: '4/3',
+                          borderRadius: 10,
+                          overflow: 'hidden',
+                          backgroundColor: '#F5F5F7',
+                        }}
+                      >
+                        <img
+                          src={url}
+                          alt={`Referencia ${i + 1}`}
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                          loading="lazy"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </DossierSection>
+              )}
+
+              {/* E. Vídeo relacionado */}
+              {car.related_video_url && (
+                <DossierSection title="E. Vídeo de instalación / referencia" icon={<Play size={14} />}>
+                  <VideoEmbed url={car.related_video_url} />
+                </DossierSection>
+              )}
+            </div>
+          )}
+
           {/* Panel relacionados: marcas sugeridas + guías por tags */}
           <SchemaRelatedPanel
             schemaId={car.id}
@@ -948,6 +1333,230 @@ export default function ExhaustSchemasPage() {
             schemaLayout={car.layout}
           />
         </>
+      )}
+    </div>
+  )
+}
+
+// ─── Dossier UI helpers ──────────────────────────────────────────────────────
+
+const dossierMetaLabel: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
+  color: '#86868B',
+  textTransform: 'uppercase',
+  letterSpacing: '0.05em',
+  margin: 0,
+}
+
+const dossierMetaValue: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 500,
+  color: '#1D1D1F',
+  margin: '2px 0 0',
+}
+
+const tdStyle: React.CSSProperties = {
+  padding: '7px 6px',
+  borderBottom: '1px solid #F2F2F7',
+  color: '#1D1D1F',
+  verticalAlign: 'top',
+}
+
+function DossierStat({
+  icon,
+  label,
+  value,
+  accent,
+  highlight = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  value: string
+  accent: string
+  highlight?: boolean
+}) {
+  return (
+    <div
+      style={{
+        backgroundColor: highlight ? `${accent}10` : '#FAFAFA',
+        border: `1px solid ${highlight ? `${accent}40` : '#F2F2F7'}`,
+        borderRadius: 12,
+        padding: 14,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+      }}
+    >
+      <div
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 10,
+          backgroundColor: `${accent}1A`,
+          color: accent,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        {icon}
+      </div>
+      <div>
+        <p style={{ fontSize: 18, fontWeight: 700, color: '#1D1D1F', margin: 0, letterSpacing: '-0.02em' }}>
+          {value}
+        </p>
+        <p style={{ fontSize: 11, color: '#86868B', margin: 0 }}>{label}</p>
+      </div>
+    </div>
+  )
+}
+
+function DossierSection({
+  title,
+  icon,
+  children,
+}: {
+  title: string
+  icon?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <section
+      style={{
+        backgroundColor: '#FFFFFF',
+        border: '1px solid #F2F2F7',
+        borderRadius: 16,
+        padding: 18,
+      }}
+    >
+      <h3
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          color: '#1D1D1F',
+          margin: '0 0 12px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}
+      >
+        {icon}
+        {title}
+      </h3>
+      {children}
+    </section>
+  )
+}
+
+function FichaRow({
+  icon,
+  label,
+  value,
+  valueEl,
+  mono = false,
+}: {
+  icon: React.ReactNode
+  label: string
+  value?: string
+  valueEl?: React.ReactNode
+  mono?: boolean
+}) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '8px 0',
+        borderBottom: '1px solid #F2F2F7',
+        gap: 10,
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        {icon}
+        <span style={{ fontSize: 12, color: '#86868B' }}>{label}</span>
+      </div>
+      {valueEl ?? (
+        <span
+          style={{
+            fontSize: 13,
+            fontWeight: 500,
+            color: '#1D1D1F',
+            textAlign: 'right',
+            fontFamily: mono ? 'ui-monospace, SFMono-Regular, monospace' : 'inherit',
+          }}
+        >
+          {value}
+        </span>
+      )}
+    </div>
+  )
+}
+
+function CostBreakdownPanel({
+  breakdown,
+  accent,
+}: {
+  breakdown: { materials?: number; consumables?: number; labor?: number; hours?: number; currency?: string }
+  accent: string
+}) {
+  const currency = breakdown.currency ?? 'EUR'
+  const symbol = currency === 'EUR' ? '€' : currency
+  const items: Array<{ label: string; value?: number; suffix: string; color: string }> = [
+    { label: 'Materiales', value: breakdown.materials, suffix: ` ${symbol}`, color: accent },
+    { label: 'Consumibles', value: breakdown.consumables, suffix: ` ${symbol}`, color: '#86868B' },
+    { label: 'Mano de obra', value: breakdown.labor, suffix: ` ${symbol}`, color: '#FF9500' },
+    { label: 'Horas estimadas', value: breakdown.hours, suffix: ' h', color: '#0071E3' },
+  ]
+  const numericItems = items.filter((i) => i.value != null)
+  const max = Math.max(...numericItems.map((i) => Number(i.value)))
+  const total =
+    (breakdown.materials ?? 0) + (breakdown.consumables ?? 0) + (breakdown.labor ?? 0)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {numericItems.map((it) => {
+        const pct = max > 0 ? (Number(it.value) / max) * 100 : 0
+        return (
+          <div key={it.label}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+              <span style={{ fontSize: 12, color: '#1D1D1F' }}>{it.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#1D1D1F' }}>
+                {it.value}{it.suffix}
+              </span>
+            </div>
+            <div style={{ height: 6, backgroundColor: '#F2F2F7', borderRadius: 4, overflow: 'hidden' }}>
+              <div
+                style={{
+                  height: '100%',
+                  width: `${pct}%`,
+                  backgroundColor: it.color,
+                  borderRadius: 4,
+                  transition: 'width 0.3s ease',
+                }}
+              />
+            </div>
+          </div>
+        )
+      })}
+      {total > 0 && (
+        <div
+          style={{
+            marginTop: 6,
+            paddingTop: 12,
+            borderTop: '1px solid #F2F2F7',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1D1D1F' }}>Total estimado</span>
+          <span style={{ fontSize: 22, fontWeight: 700, color: accent, letterSpacing: '-0.02em' }}>
+            {total} {symbol}
+          </span>
+        </div>
       )}
     </div>
   )
