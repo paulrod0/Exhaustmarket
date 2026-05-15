@@ -1,0 +1,48 @@
+name: Keep Supabase Alive
+
+# Supabase free tier pausa el proyecto tras ~7 dias sin actividad.
+# Este workflow hace un ping ligero cada 4 horas para mantenerlo despierto.
+# La ANON_KEY es publica por diseno (tambien va en el cliente del navegador).
+
+on:
+  schedule:
+    # Cada 4 horas (UTC)
+    - cron: '0 */4 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    name: Ping Supabase REST
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: REST query
+        env:
+          SUPABASE_URL: https://afsmlmpijjapkzdlrhhd.supabase.co
+          SUPABASE_ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFmc21sbXBpamphcGt6ZGxyaGhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ1ODEwNDMsImV4cCI6MjA4MDE1NzA0M30.I32LD7NIFtkPmchmrBMNV48nK3bwMvTEnSm_1QoN7Qk
+        run: |
+          set -e
+          echo "Pinging $SUPABASE_URL"
+
+          for attempt in 1 2 3; do
+            response=$(curl -s -w "\n%{http_code}" --max-time 30 \
+              "$SUPABASE_URL/rest/v1/exhaust_schemas?select=id&limit=1" \
+              -H "apikey: $SUPABASE_ANON_KEY" \
+              -H "Authorization: Bearer $SUPABASE_ANON_KEY" || true)
+
+            status=$(echo "$response" | tail -n1)
+            echo "Attempt $attempt -> HTTP $status"
+
+            if [ "$status" = "200" ]; then
+              echo "Supabase OK"
+              exit 0
+            fi
+
+            if [ "$attempt" -lt 3 ]; then
+              echo "Retrying in 60s..."
+              sleep 60
+            fi
+          done
+
+          echo "Supabase did not respond after 3 attempts"
+          exit 1
