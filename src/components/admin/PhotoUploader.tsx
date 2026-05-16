@@ -1,6 +1,7 @@
 import { useRef, useState, type DragEvent, type ChangeEvent } from 'react'
 import { Upload, X, Star, Loader2 } from 'lucide-react'
 import { uploadExhaustPhoto, deleteExhaustPhoto } from '../../lib/storage'
+import { compressImage } from '../../lib/imageCompress'
 
 interface PhotoUploaderProps {
   schemaId: string
@@ -36,10 +37,12 @@ export default function PhotoUploader({
         if (!file.type.startsWith('image/')) {
           throw new Error(`El archivo "${file.name}" no es una imagen`)
         }
-        if (file.size > 10 * 1024 * 1024) {
-          throw new Error(`"${file.name}" supera el límite de 10 MB`)
+        if (file.size > 20 * 1024 * 1024) {
+          throw new Error(`"${file.name}" supera el límite de 20 MB antes de comprimir`)
         }
-        const url = await uploadExhaustPhoto(file, schemaId)
+        // Compresión automática en el navegador: max 1920px, WebP cuando se pueda
+        const compressed = await compressImage(file)
+        const url = await uploadExhaustPhoto(compressed, schemaId)
         uploaded.push(url)
       }
       // Si no había cover, la primera subida la convierte en cover

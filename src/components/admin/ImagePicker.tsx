@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import { Upload, X, Loader2 } from 'lucide-react'
 import { uploadContentMedia, deleteContentMedia } from '../../lib/storage'
+import { compressImage } from '../../lib/imageCompress'
 
 interface ImagePickerProps {
   value: string | null
@@ -34,13 +35,15 @@ export default function ImagePicker({
       setError('El archivo debe ser una imagen')
       return
     }
-    if (file.size > 10 * 1024 * 1024) {
-      setError('Máximo 10 MB')
+    if (file.size > 20 * 1024 * 1024) {
+      setError('Máximo 20 MB (antes de comprimir)')
       return
     }
     setUploading(true)
     try {
-      const url = await uploadContentMedia(file, prefix)
+      // Compresión automática: redimensiona a 1920px y convierte a WebP
+      const compressed = await compressImage(file)
+      const url = await uploadContentMedia(compressed, prefix)
       // Si había una anterior, borrarla del bucket
       if (value) {
         try {
