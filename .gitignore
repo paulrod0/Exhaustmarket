@@ -5,3 +5,23 @@ dist/
 .env.*.local
 *.log
 .DS_Store
+.vercel
+
+# managed by open-wa
+**.data.json
+**.node-persist**
+**_IGNORE_**
+# end managed by open-wa
+
+# clawbot (bot WhatsApp local, no se versiona el runtime)
+clawbot/node_modules/
+clawbot/qr.png
+clawbot/.wwebjs_auth/
+clawbot/.wwebjs_cache/
+clawbot/inbox/
+clawbot/outbox/
+clawbot/clientes/
+clawbot/registro.md
+
+# Local Netlify folder
+.netlify
