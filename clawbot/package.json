@@ -1,0 +1,15 @@
+{
+  "name": "clawbot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Puente WhatsApp <-> carpeta .md (sin APIs de pago). El cerebro es la sesión del agente.",
+  "main": "bridge.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node bridge.js"
+  },
+  "dependencies": {
+    "qrcode": "^1.5.4",
+    "whatsapp-web.js": "^1.34.7"
+  }
+}
