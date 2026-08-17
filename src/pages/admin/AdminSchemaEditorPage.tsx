@@ -6,6 +6,8 @@ import {
   LAYOUTS,
   LAYOUT_BY_ID,
   blankComponentsForLayout,
+  sortedComponents,
+  reindexComponents,
   type ExhaustComponent,
   type ExhaustSchemaRecord,
   type Layout,
@@ -100,7 +102,7 @@ export default function AdminSchemaEditorPage() {
           layout: row.layout,
           color: row.color ?? '#0071E3',
           note: row.note ?? '',
-          components: row.components ?? blankComponentsForLayout(row.layout),
+          components: reindexComponents(sortedComponents(row.components ?? blankComponentsForLayout(row.layout))),
           cover_url: row.cover_url,
           gallery_urls: row.gallery_urls ?? [],
           is_active: row.is_active,
@@ -122,14 +124,16 @@ export default function AdminSchemaEditorPage() {
 
   function changeLayout(next: Layout) {
     setForm((prev) => {
-      // Mantener componentes existentes que también existen en el nuevo layout
-      const newComponents = blankComponentsForLayout(next)
-      for (const cid of Object.keys(newComponents)) {
-        if (prev.components[cid]) {
-          newComponents[cid] = { ...prev.components[cid], id: cid }
-        }
+      // Carga los componentes por defecto de la arquitectura base elegida,
+      // conservando lo ya rellenado en ids que coinciden y los añadidos a mano.
+      const merged = blankComponentsForLayout(next)
+      for (const cid of Object.keys(merged)) {
+        if (prev.components[cid]) merged[cid] = { ...prev.components[cid], id: cid }
       }
-      return { ...prev, layout: next, components: newComponents }
+      for (const [cid, c] of Object.entries(prev.components)) {
+        if (cid.startsWith('custom_')) merged[cid] = c
+      }
+      return { ...prev, layout: next, components: reindexComponents(sortedComponents(merged)) }
     })
   }
 
@@ -141,6 +145,37 @@ export default function AdminSchemaEditorPage() {
         [cid]: { ...prev.components[cid], ...patch, id: cid },
       },
     }))
+  }
+
+  function addComponent() {
+    const cid = 'custom_' + Math.random().toString(36).slice(2, 9)
+    setForm((prev) => {
+      const ordered = sortedComponents(prev.components)
+      ordered.push({ id: cid, name: 'Nuevo componente', order: ordered.length, material: '', temp: '', description: '', tip: '' })
+      return { ...prev, components: reindexComponents(ordered) }
+    })
+  }
+
+  function removeComponent(cid: string) {
+    if (!window.confirm('¿Quitar este componente del esquema?')) return
+    setForm((prev) => {
+      const next = { ...prev.components }
+      delete next[cid]
+      return { ...prev, components: next }
+    })
+  }
+
+  // Reordena los componentes vía el campo `order` (jsonb NO conserva el orden
+  // de claves del objeto, por eso persistía mal). El orden se refleja en el esquema.
+  function moveComponent(cid: string, dir: 'up' | 'down') {
+    setForm((prev) => {
+      const arr = sortedComponents(prev.components)
+      const i = arr.findIndex((c) => c.id === cid)
+      const j = dir === 'up' ? i - 1 : i + 1
+      if (i === -1 || j < 0 || j >= arr.length) return prev
+      ;[arr[i], arr[j]] = [arr[j], arr[i]]
+      return { ...prev, components: reindexComponents(arr) }
+    })
   }
 
   async function save() {
@@ -159,14 +194,16 @@ export default function AdminSchemaEditorPage() {
       layout: form.layout,
       color: form.color,
       note: form.note.trim() || null,
-      components: form.components,
+      // Columnas jsonb: hay que serializar (el driver convertiría un array JS
+      // en array-literal de Postgres y fallaría con "invalid input syntax for type json").
+      components: JSON.stringify(form.components),
       cover_url: form.cover_url,
-      gallery_urls: form.gallery_urls,
+      gallery_urls: form.gallery_urls, // text[] → va como array
       is_active: form.is_active,
-      allowed_tiers: form.allowed_tiers,
-      despiece: form.despiece,
-      cost_breakdown: form.cost_breakdown,
-      reference_photos: form.reference_photos,
+      allowed_tiers: form.allowed_tiers, // text[]
+      despiece: JSON.stringify(form.despiece), // jsonb
+      cost_breakdown: JSON.stringify(form.cost_breakdown), // jsonb
+      reference_photos: form.reference_photos, // text[]
       related_video_url: form.related_video_url.trim() || null,
     }
 
@@ -297,7 +334,7 @@ export default function AdminSchemaEditorPage() {
             {isNew ? 'Nuevo esquema' : `${form.brand} ${form.model}`}
           </h1>
           <p style={{ fontSize: 13, color: '#86868B', margin: '4px 0 0' }}>
-            {layoutDef.label} · {layoutDef.components.length} componentes
+            {layoutDef?.label ?? form.layout} · {Object.keys(form.components).length} componentes
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -542,21 +579,13 @@ export default function AdminSchemaEditorPage() {
       {/* Sección 3: Componentes */}
       <Section
         title="Componentes del escape"
-        subtitle={`Layout: ${layoutDef.label}. Rellena cada componente que corresponda.`}
+        subtitle={`Arquitectura base: ${layoutDef?.label ?? form.layout}. Renombra, añade o quita los componentes que correspondan a este coche.`}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {layoutDef.components.map((c) => {
-            const comp = form.components[c.id] ?? {
-              id: c.id,
-              name: c.defaultName,
-              material: '',
-              temp: '',
-              description: '',
-              tip: '',
-            }
+          {sortedComponents(form.components).map((comp, idx, arr) => {
             return (
               <details
-                key={c.id}
+                key={comp.id}
                 style={{
                   border: '1px solid #E5E5EA',
                   borderRadius: 10,
@@ -575,9 +604,11 @@ export default function AdminSchemaEditorPage() {
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     listStyle: 'none',
+                    gap: 12,
                   }}
                 >
-                  <span>{c.label}</span>
+                  <span style={{ flex: 1, color: '#86868B', fontSize: 11 }}>{idx + 1}.</span>
+                  <span style={{ flex: 6 }}>{comp.name || 'Componente'}</span>
                   <span
                     style={{
                       fontSize: 11,
@@ -587,6 +618,32 @@ export default function AdminSchemaEditorPage() {
                   >
                     {comp.material ? '✓ completado' : 'vacío'}
                   </span>
+                  <button
+                    type="button"
+                    title="Subir (orden del flujo de gases)"
+                    disabled={idx === 0}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); moveComponent(comp.id, 'up') }}
+                    style={{ border: 'none', background: 'transparent', color: idx === 0 ? '#D2D2D7' : '#0071E3', cursor: idx === 0 ? 'default' : 'pointer', fontSize: 15, lineHeight: 1, padding: '0 2px' }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    title="Bajar"
+                    disabled={idx === arr.length - 1}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); moveComponent(comp.id, 'down') }}
+                    style={{ border: 'none', background: 'transparent', color: idx === arr.length - 1 ? '#D2D2D7' : '#0071E3', cursor: idx === arr.length - 1 ? 'default' : 'pointer', fontSize: 15, lineHeight: 1, padding: '0 2px' }}
+                  >
+                    ↓
+                  </button>
+                  <button
+                    type="button"
+                    title="Quitar componente"
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); removeComponent(comp.id) }}
+                    style={{ border: 'none', background: 'transparent', color: '#FF3B30', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: '0 4px' }}
+                  >
+                    ✕
+                  </button>
                 </summary>
                 <div style={{ padding: '0 16px 16px', borderTop: '1px solid #F2F2F7' }}>
                   <Grid>
@@ -594,8 +651,8 @@ export default function AdminSchemaEditorPage() {
                       <input
                         style={inputStyle}
                         value={comp.name}
-                        onChange={(e) => updateComponent(c.id, { name: e.target.value })}
-                        placeholder={c.defaultName}
+                        onChange={(e) => updateComponent(comp.id, { name: e.target.value })}
+                        placeholder="Nombre del componente"
                       />
                     </Field>
                     <Field label="Material">
@@ -603,7 +660,7 @@ export default function AdminSchemaEditorPage() {
                         style={inputStyle}
                         value={comp.material}
                         onChange={(e) =>
-                          updateComponent(c.id, { material: e.target.value })
+                          updateComponent(comp.id, { material: e.target.value })
                         }
                         placeholder="Inconel, Titanio, Acero inox 321…"
                       />
@@ -612,7 +669,7 @@ export default function AdminSchemaEditorPage() {
                       <input
                         style={inputStyle}
                         value={comp.temp}
-                        onChange={(e) => updateComponent(c.id, { temp: e.target.value })}
+                        onChange={(e) => updateComponent(comp.id, { temp: e.target.value })}
                         placeholder="850°C"
                       />
                     </Field>
@@ -622,7 +679,7 @@ export default function AdminSchemaEditorPage() {
                       style={{ ...inputStyle, minHeight: 70, resize: 'vertical' }}
                       value={comp.description}
                       onChange={(e) =>
-                        updateComponent(c.id, { description: e.target.value })
+                        updateComponent(comp.id, { description: e.target.value })
                       }
                       placeholder="Colector de 6-1 en Inconel. El calor extremo del V12 exige…"
                     />
@@ -631,7 +688,7 @@ export default function AdminSchemaEditorPage() {
                     <textarea
                       style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }}
                       value={comp.tip ?? ''}
-                      onChange={(e) => updateComponent(c.id, { tip: e.target.value })}
+                      onChange={(e) => updateComponent(comp.id, { tip: e.target.value })}
                       placeholder="Akrapovic es el proveedor OEM de Lamborghini…"
                     />
                   </Field>
@@ -662,7 +719,7 @@ export default function AdminSchemaEditorPage() {
                         <input
                           style={inputStyle}
                           value={comp.oem_ref ?? ''}
-                          onChange={(e) => updateComponent(c.id, { oem_ref: e.target.value })}
+                          onChange={(e) => updateComponent(comp.id, { oem_ref: e.target.value })}
                           placeholder="60666107"
                         />
                       </Field>
@@ -673,7 +730,7 @@ export default function AdminSchemaEditorPage() {
                           style={inputStyle}
                           value={comp.diameter_mm ?? ''}
                           onChange={(e) =>
-                            updateComponent(c.id, {
+                            updateComponent(comp.id, {
                               diameter_mm: e.target.value ? parseFloat(e.target.value) : undefined,
                             })
                           }
@@ -687,7 +744,7 @@ export default function AdminSchemaEditorPage() {
                           style={inputStyle}
                           value={comp.thickness_mm ?? ''}
                           onChange={(e) =>
-                            updateComponent(c.id, {
+                            updateComponent(comp.id, {
                               thickness_mm: e.target.value ? parseFloat(e.target.value) : undefined,
                             })
                           }
@@ -701,7 +758,7 @@ export default function AdminSchemaEditorPage() {
                           style={inputStyle}
                           value={comp.fabrication_hours ?? ''}
                           onChange={(e) =>
-                            updateComponent(c.id, {
+                            updateComponent(comp.id, {
                               fabrication_hours: e.target.value ? parseFloat(e.target.value) : undefined,
                             })
                           }
@@ -715,7 +772,7 @@ export default function AdminSchemaEditorPage() {
                           style={inputStyle}
                           value={comp.material_cost ?? ''}
                           onChange={(e) =>
-                            updateComponent(c.id, {
+                            updateComponent(comp.id, {
                               material_cost: e.target.value ? parseFloat(e.target.value) : undefined,
                             })
                           }
@@ -729,7 +786,7 @@ export default function AdminSchemaEditorPage() {
                           style={inputStyle}
                           value={comp.total_cost ?? ''}
                           onChange={(e) =>
-                            updateComponent(c.id, {
+                            updateComponent(comp.id, {
                               total_cost: e.target.value ? parseFloat(e.target.value) : undefined,
                             })
                           }
@@ -741,7 +798,7 @@ export default function AdminSchemaEditorPage() {
                           style={inputStyle}
                           value={comp.difficulty ?? ''}
                           onChange={(e) =>
-                            updateComponent(c.id, {
+                            updateComponent(comp.id, {
                               difficulty: (e.target.value || undefined) as 'baja' | 'media' | 'alta' | undefined,
                             })
                           }
@@ -757,7 +814,7 @@ export default function AdminSchemaEditorPage() {
                           <input
                             type="checkbox"
                             checked={comp.fabricable ?? false}
-                            onChange={(e) => updateComponent(c.id, { fabricable: e.target.checked })}
+                            onChange={(e) => updateComponent(comp.id, { fabricable: e.target.checked })}
                           />
                           <span style={{ fontSize: 13 }}>
                             {comp.fabricable ? 'Sí, fabricable' : 'No (solo OEM/aftermarket)'}
@@ -770,6 +827,16 @@ export default function AdminSchemaEditorPage() {
               </details>
             )
           })}
+          <button
+            type="button"
+            onClick={addComponent}
+            style={{
+              marginTop: 4, padding: '12px 16px', border: '2px dashed #0071E3', borderRadius: 10,
+              background: '#F0F7FF', color: '#0071E3', fontWeight: 500, fontSize: 14, cursor: 'pointer',
+            }}
+          >
+            + Añadir componente
+          </button>
         </div>
       </Section>
 

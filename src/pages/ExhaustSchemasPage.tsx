@@ -3,6 +3,7 @@ import { Thermometer, Layers, Info, ChevronRight, X, Search, Box, Clock, Euro, H
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import { canViewTiers } from '../lib/contentTypes'
+import { sortedComponents } from '../lib/schemaDefinitions'
 import SchemaRelatedPanel from '../components/SchemaRelatedPanel'
 import TierBadge from '../components/TierBadge'
 import UpgradeCallout from '../components/UpgradeCallout'
@@ -553,6 +554,56 @@ function I6ttDiagram({ selected, onSelect, color }: { selected: string | null; o
   )
 }
 
+/**
+ * Diagrama clicable GENÉRICO generado desde los componentes del esquema.
+ * Sirve para cualquier arquitectura (incluidas las nuevas) y refleja en vivo
+ * los cambios del panel: añadir, quitar o renombrar componentes.
+ */
+function GenericDiagram({
+  components, selected, onSelect, color,
+}: {
+  components: Record<string, { id: string; name: string; material?: string }>
+  selected: string | null
+  onSelect: (id: string) => void
+  color: string
+}) {
+  const list = sortedComponents(components)
+  if (list.length === 0) {
+    return <div style={{ color: '#86868B', fontSize: 13, padding: '20px 8px' }}>Este modelo no tiene componentes cargados todavía.</div>
+  }
+  return (
+    <div style={{ overflowX: 'auto', padding: '4px 2px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 0, minWidth: 'min-content' }}>
+        {/* motor */}
+        <div style={{ flexShrink: 0, width: 26, height: 56, borderRadius: 6, backgroundColor: '#E5E5EA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontSize: 9, color: '#86868B', transform: 'rotate(-90deg)', whiteSpace: 'nowrap' }}>motor</span>
+        </div>
+        {list.map((c) => {
+          const isSel = c.id === selected
+          return (
+            <div key={c.id} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+              <div style={{ width: 22, height: 2, backgroundColor: '#D2D2D7' }} />
+              <button
+                onClick={() => onSelect(c.id)}
+                title={c.name}
+                style={{
+                  minWidth: 92, maxWidth: 150, padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                  border: `2px solid ${isSel ? color : '#E5E5EA'}`,
+                  backgroundColor: isSel ? `${color}12` : '#FFFFFF',
+                  color: '#1D1D1F', textAlign: 'center', transition: 'all .15s ease',
+                }}
+              >
+                <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
+                {c.material && <div style={{ fontSize: 10, color: '#86868B', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.material}</div>}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function ExhaustSchemasPage() {
@@ -926,17 +977,16 @@ export default function ExhaustSchemasPage() {
                 overflow: 'hidden',
               }}
             >
-              {car.layout === 'v8tt' && <V8ttDiagram selected={selectedComponent} onSelect={setSelectedComponent} color={car.color} />}
-              {car.layout === 'v8na' && <V8naDiagram selected={selectedComponent} onSelect={setSelectedComponent} color={car.color} />}
-              {car.layout === 'v10na' && <V10naDiagram selected={selectedComponent} onSelect={setSelectedComponent} color={car.color} />}
-              {(car.layout === 'v12na') && <V12Diagram selected={selectedComponent} onSelect={setSelectedComponent} color={car.color} />}
-              {car.layout === 'flat6na' && <Flat6naDiagram selected={selectedComponent} onSelect={setSelectedComponent} color={car.color} />}
-              {car.layout === 'flat6tt' && <Flat6ttDiagram selected={selectedComponent} onSelect={setSelectedComponent} color={car.color} />}
-              {car.layout === 'i6tt' && <I6ttDiagram selected={selectedComponent} onSelect={setSelectedComponent} color={car.color} />}
+              {/* Diagrama clicable generado desde los componentes (vale para todas las
+                  arquitecturas y refleja los cambios de add/quitar/renombrar del panel). */}
+              <GenericDiagram components={car.components} selected={selectedComponent} onSelect={setSelectedComponent} color={car.color} />
+              <p style={{ fontSize: 11, color: '#C7C7CC', margin: '10px 0 0', textAlign: 'center' }}>
+                Toca un componente para ver su despiece, coste y fotos
+              </p>
 
               {/* Component pills */}
               <div style={{ marginTop: '16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {Object.values(car.components).map(c => (
+                {sortedComponents(car.components).map(c => (
                   <button
                     key={c.id}
                     onClick={() => setSelectedComponent(c.id)}

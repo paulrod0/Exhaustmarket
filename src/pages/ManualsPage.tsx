@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
-import { FileText, Download, Search } from 'lucide-react'
+import { uploadTutorialFile } from '../lib/storage'
+import { useAuthStore } from '../stores/authStore'
+import { FileText, Download, Search, Upload, Plus, X } from 'lucide-react'
 
 interface Manual {
   id: string
@@ -38,6 +40,52 @@ export default function ManualsPage() {
   const [selectedType, setSelectedType] = useState<string>('all')
   const [error, setError] = useState<string | null>(null)
 
+  // Subida (solo admin)
+  const isAdmin = useAuthStore((s) => Boolean((s.profile as { is_admin?: boolean } | null)?.is_admin))
+  const profileId = useAuthStore((s) => (s.profile as { id?: string } | null)?.id ?? null)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({
+    title: '', description: '', car_brand: '', car_model: '',
+    manual_type: 'car_manual', required_tier: 'standard',
+  })
+  const [file, setFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [formError, setFormError] = useState<string | null>(null)
+
+  async function handleUpload(e: React.FormEvent) {
+    e.preventDefault()
+    setFormError(null)
+    if (!file) { setFormError('Selecciona un archivo PDF'); return }
+    if (!form.title.trim() || !form.car_brand.trim() || !form.car_model.trim()) {
+      setFormError('Título, marca y modelo son obligatorios'); return
+    }
+    if (file.size > 50 * 1024 * 1024) { setFormError('Máximo 50 MB'); return }
+    setUploading(true)
+    try {
+      const fileUrl = await uploadTutorialFile(file, 'manuals')
+      const { error: insErr } = await supabase.from('manuals').insert({
+        title: form.title.trim(),
+        description: form.description.trim() || form.title.trim(),
+        car_brand: form.car_brand.trim(),
+        car_model: form.car_model.trim(),
+        manual_type: form.manual_type,
+        file_url: fileUrl,
+        file_size: file.size,
+        required_tier: form.required_tier,
+        uploaded_by: profileId,
+      })
+      if (insErr) throw new Error(insErr.message)
+      setForm({ title: '', description: '', car_brand: '', car_model: '', manual_type: 'car_manual', required_tier: 'standard' })
+      setFile(null)
+      setShowForm(false)
+      await fetchManuals()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Error al subir el manual')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   useEffect(() => {
     fetchManuals()
   }, [])
@@ -61,26 +109,14 @@ export default function ManualsPage() {
     }
   }
 
-  async function handleDownload(manual: Manual) {
-    try {
-      const { data, error } = await supabase.storage
-        .from('manuals')
-        .download(manual.file_url)
-
-      if (error) throw error
-
-      const url = URL.createObjectURL(data)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${manual.title}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
-    } catch (err) {
-      console.error('Error downloading manual:', err)
-      alert('Error al descargar el manual')
+  function handleDownload(manual: Manual) {
+    // file_url ya es una URL pública de R2: abrimos en pestaña nueva (el navegador
+    // descarga o previsualiza el PDF). El antiguo .download() de Supabase ya no existe.
+    if (!manual.file_url) {
+      alert('Este manual no tiene archivo asociado')
+      return
     }
+    window.open(manual.file_url, '_blank', 'noopener,noreferrer')
   }
 
   const filteredManuals = manuals.filter(manual => {
@@ -127,6 +163,66 @@ export default function ManualsPage() {
           Accede a manuales de coches y guias de instalacion
         </p>
       </div>
+
+      {/* Admin: subir manual */}
+      {isAdmin && (
+        <div style={{ maxWidth: '600px', margin: '0 auto 24px' }}>
+          {!showForm ? (
+            <button
+              onClick={() => setShowForm(true)}
+              className="btn-pill btn-primary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <Plus size={16} /> Subir manual (admin)
+            </button>
+          ) : (
+            <form
+              onSubmit={handleUpload}
+              style={{ border: '1px solid #E5E5EA', borderRadius: 14, padding: 20, background: '#FFFFFF', textAlign: 'left' }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <strong style={{ fontSize: 15 }}>Nuevo manual</strong>
+                <button type="button" onClick={() => setShowForm(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#86868B' }}>
+                  <X size={18} />
+                </button>
+              </div>
+              <input className="input-apple" placeholder="Título *" value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ marginBottom: 10 }} />
+              <textarea className="input-apple" placeholder="Descripción" value={form.description} rows={2}
+                onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ marginBottom: 10, resize: 'vertical' }} />
+              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                <input className="input-apple" placeholder="Marca *" value={form.car_brand}
+                  onChange={(e) => setForm({ ...form, car_brand: e.target.value })} />
+                <input className="input-apple" placeholder="Modelo *" value={form.car_model}
+                  onChange={(e) => setForm({ ...form, car_model: e.target.value })} />
+              </div>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                <select className="input-apple" value={form.manual_type}
+                  onChange={(e) => setForm({ ...form, manual_type: e.target.value })}>
+                  {Object.entries(manualTypeLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                <select className="input-apple" value={form.required_tier}
+                  onChange={(e) => setForm({ ...form, required_tier: e.target.value })}>
+                  <option value="standard">Acceso libre</option>
+                  <option value="professional">Profesional</option>
+                  <option value="premium">Premium</option>
+                </select>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px', border: '2px dashed #D2D2D7', borderRadius: 10, cursor: 'pointer', marginBottom: 12, fontSize: 13, color: '#6E6E73' }}>
+                <Upload size={15} />
+                {file ? file.name : 'Seleccionar PDF (máx. 50 MB)'}
+                <input type="file" accept=".pdf,application/pdf" style={{ display: 'none' }}
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+              </label>
+              {formError && <div style={{ color: '#D70015', fontSize: 13, marginBottom: 10 }}>{formError}</div>}
+              <button type="submit" disabled={uploading} className="btn-pill btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                {uploading ? 'Subiendo…' : 'Guardar manual'}
+              </button>
+            </form>
+          )}
+        </div>
+      )}
 
       {/* Search Bar */}
       <div style={{ maxWidth: '600px', margin: '0 auto 32px' }}>

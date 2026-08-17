@@ -42,7 +42,7 @@ export default function Layout() {
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/marketplace', label: 'Marketplace' },
     { to: '/esquemas', label: 'Esquemas' },
-    { to: '/marcas', label: 'Marcas' },
+    { to: '/manuals', label: 'Manuales' },
     { to: '/guias', label: 'Guías' },
     { to: '/quotes', label: 'Cotizaciones' },
   ]

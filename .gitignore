@@ -25,3 +25,12 @@ clawbot/registro.md
 
 # Local Netlify folder
 .netlify
+
+# Secretos / entornos locales (NO subir a GitHub)
+.env.new
+.env.*
+!.env.example
+
+# Superpowers brainstorm (mockups locales de diseño)
+.superpowers/
+

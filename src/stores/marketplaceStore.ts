@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
+import { attachRelated } from '../lib/joinRelated'
 import type { Database } from '../types/database'
 
 type Product = Database['public']['Tables']['professional_products']['Row']
@@ -54,7 +55,7 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
   fetchProducts: async () => {
     const { data, error } = await supabase
       .from('professional_products')
-      .select('*, seller:user_profiles!professional_id(full_name, company_name)')
+      .select('*')
       .eq('is_active', true)
       .order('created_at', { ascending: false })
 
@@ -63,13 +64,16 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       return
     }
 
-    set({ products: data as any })
+    const products = await attachRelated(data as any[], [
+      { table: 'user_profiles', fk: 'professional_id', as: 'seller', columns: 'id, full_name, company_name' },
+    ])
+    set({ products: products as any })
   },
 
   fetchServices: async () => {
     const { data, error } = await supabase
       .from('workshop_services')
-      .select('*, seller:user_profiles!workshop_id(full_name, company_name)')
+      .select('*')
       .eq('is_active', true)
       .order('created_at', { ascending: false })
 
@@ -78,7 +82,10 @@ export const useMarketplaceStore = create<MarketplaceState>((set, get) => ({
       return
     }
 
-    set({ services: data as any })
+    const services = await attachRelated(data as any[], [
+      { table: 'user_profiles', fk: 'workshop_id', as: 'seller', columns: 'id, full_name, company_name' },
+    ])
+    set({ services: services as any })
   },
 
   fetchAllListings: async () => {

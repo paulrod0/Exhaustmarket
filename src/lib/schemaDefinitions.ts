@@ -4,14 +4,9 @@
  * saber qué componentes debe tener cada tipo de motor.
  */
 
-export type Layout =
-  | 'v8tt'
-  | 'v8na'
-  | 'v10na'
-  | 'v12na'
-  | 'flat6na'
-  | 'flat6tt'
-  | 'i6tt'
+// Antes era una unión cerrada; ahora es abierta para cubrir todas las
+// arquitecturas de motor del mercado. Los componentes son editables por esquema.
+export type Layout = string
 
 export interface ComponentField {
   id: string
@@ -128,7 +123,44 @@ export const LAYOUTS: LayoutDefinition[] = [
       { id: 'tips', label: 'Salidas', defaultName: 'Salidas' },
     ],
   },
+  // ── En línea (atmosféricos) ──
+  ...['I3', 'I4', 'I5', 'I6'].map((n) => layoutNA(`${n.toLowerCase()}na`, `${n} Atmosférico`, `Motor ${n} atmosférico: colector, catalizador, silencioso y salidas`)),
+  // ── En línea (turbo) ──
+  ...['I3', 'I4', 'I5'].map((n) => layoutTurbo(`${n.toLowerCase()}tt`, `${n} Turbo`, `Motor ${n} turbo: colector+turbo, downpipe, catalizador, silencioso y salidas`)),
+  // ── V (nuevos, además de V8/V10/V12 ya existentes) ──
+  layoutDualNA('v6na', 'V6 Atmosférico', 'V6 NA: colectores, catalizadores, X-pipe y salidas'),
+  layoutDualTurbo('v6tt', 'V6 Turbo / Biturbo', 'V6 turbo: colectores+turbo, downpipes, catalizadores, silencioso y salidas'),
+  // ── VR / W ──
+  layoutTurbo('vr6', 'VR6', 'VR6 de ángulo estrecho (una bancada): colector, catalizador, silencioso y salidas'),
+  layoutDualNA('w12', 'W12', 'W12: dos bancadas, catalizadores, silencioso y salidas'),
+  layoutDualTurbo('w16tt', 'W16 Quad-Turbo', 'W16 con 4 turbos: colectores+turbo, downpipes, catalizadores y salidas'),
+  // ── Bóxer / Flat ──
+  layoutDualNA('flat4na', 'Bóxer/Flat-4 Atmosférico', 'Flat-4 NA: colectores, catalizador, silencioso y salidas'),
+  layoutTurbo('flat4tt', 'Bóxer/Flat-4 Turbo', 'Flat-4 turbo tipo Subaru/Toyota GR: colector+turbo, downpipe, catalizador, silencioso y salidas'),
+  layoutDualNA('flat12', 'Flat-12', 'Flat-12 clásico/superdeportivo: dos bancadas, catalizadores, silencioso y salidas'),
+  // ── Rotativo / alternativos ──
+  layoutNA('rotary', 'Rotativo / Wankel', 'Motor rotativo Wankel: colector, catalizador, silencioso y salidas'),
+  layoutNA('h2ice', 'Hidrógeno combustión', 'Motor térmico de hidrógeno: colector, catalizador (NOx), silencioso y salidas'),
+  { id: 'electric', label: 'Eléctrico (sin escape)', description: 'Vehículo eléctrico: sin sistema de escape. Mostrar accesorios/servicios.', components: [] },
+  { id: 'fcev', label: 'Hidrógeno FCEV (sin escape)', description: 'Pila de combustible: sin escape térmico convencional; salida de agua/vapor.', components: [] },
 ]
+
+/* Helpers para generar los sets de componentes por defecto (todos editables luego). */
+function comp(id: string, name: string): ComponentField {
+  return { id, label: name, defaultName: name }
+}
+function layoutNA(id: string, label: string, description: string): LayoutDefinition {
+  return { id, label, description, components: [comp('colector', 'Colector'), comp('catalizador', 'Catalizador'), comp('silenciador', 'Silenciador'), comp('salidas', 'Salidas')] }
+}
+function layoutTurbo(id: string, label: string, description: string): LayoutDefinition {
+  return { id, label, description, components: [comp('colector_turbo', 'Colector + Turbo'), comp('downpipe', 'Downpipe'), comp('catalizador', 'Catalizador'), comp('silenciador', 'Silenciador'), comp('salidas', 'Salidas')] }
+}
+function layoutDualNA(id: string, label: string, description: string): LayoutDefinition {
+  return { id, label, description, components: [comp('colector_l', 'Colector Izq.'), comp('colector_r', 'Colector Der.'), comp('cat_l', 'Catalizador Izq.'), comp('cat_r', 'Catalizador Der.'), comp('xpipe', 'X-Pipe'), comp('silenciador', 'Silenciador'), comp('salidas', 'Salidas')] }
+}
+function layoutDualTurbo(id: string, label: string, description: string): LayoutDefinition {
+  return { id, label, description, components: [comp('colector_turbo_l', 'Colector + Turbo Izq.'), comp('colector_turbo_r', 'Colector + Turbo Der.'), comp('downpipe_l', 'Downpipe Izq.'), comp('downpipe_r', 'Downpipe Der.'), comp('cat_l', 'Catalizador Izq.'), comp('cat_r', 'Catalizador Der.'), comp('silenciador', 'Silenciador'), comp('salidas', 'Salidas')] }
+}
 
 export const LAYOUT_BY_ID: Record<Layout, LayoutDefinition> = Object.fromEntries(
   LAYOUTS.map((l) => [l.id, l]),
@@ -137,6 +169,8 @@ export const LAYOUT_BY_ID: Record<Layout, LayoutDefinition> = Object.fromEntries
 export interface ExhaustComponent {
   id: string
   name: string
+  /** Orden explícito (jsonb NO conserva el orden de claves del objeto). */
+  order?: number
   material: string
   temp: string
   description: string
@@ -201,15 +235,44 @@ export function blankComponentsForLayout(
 ): Record<string, ExhaustComponent> {
   const def = LAYOUT_BY_ID[layout]
   const out: Record<string, ExhaustComponent> = {}
-  for (const c of def.components) {
+  def.components.forEach((c, idx) => {
     out[c.id] = {
       id: c.id,
       name: c.defaultName,
+      order: idx,
       material: '',
       temp: '',
       description: '',
       tip: '',
     }
-  }
+  })
+  return out
+}
+
+/**
+ * Devuelve los componentes ORDENADOS por su campo `order`.
+ * Fallback: si a alguno le falta `order` (datos antiguos), respeta el orden de
+ * inserción actual. Úsalo SIEMPRE para renderizar/pintar el esquema.
+ */
+export function sortedComponents(
+  components: Record<string, ExhaustComponent> | null | undefined,
+): ExhaustComponent[] {
+  const arr = Object.values(components ?? {})
+  return arr
+    .map((c, i) => ({ c, i }))
+    .sort((a, b) => {
+      const ao = a.c.order ?? 1000 + a.i
+      const bo = b.c.order ?? 1000 + b.i
+      return ao - bo
+    })
+    .map((x) => x.c)
+}
+
+/** Reasigna `order` = índice según un array ya ordenado de componentes. */
+export function reindexComponents(
+  ordered: ExhaustComponent[],
+): Record<string, ExhaustComponent> {
+  const out: Record<string, ExhaustComponent> = {}
+  ordered.forEach((c, idx) => { out[c.id] = { ...c, order: idx } })
   return out
 }

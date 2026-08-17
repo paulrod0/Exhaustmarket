@@ -10,6 +10,9 @@ import {
   ChevronLeft,
   Menu,
   X,
+  ShieldCheck,
+  MessageSquare,
+  Wallet,
 } from 'lucide-react'
 
 const sidebarLinks = [
@@ -17,18 +20,11 @@ const sidebarLinks = [
   { to: '/panel/products', label: 'Productos', icon: Package, end: false },
   { to: '/panel/orders', label: 'Pedidos', icon: ClipboardList, end: false },
   { to: '/panel/invoices', label: 'Facturas', icon: FileText, end: false },
-  {
-    to: '/panel/catalog-sync',
-    label: 'Sincronizar Catalogo',
-    icon: RefreshCw,
-    end: false,
-  },
-  {
-    to: '/panel/api-keys',
-    label: 'Sincronización API',
-    icon: Key,
-    end: false,
-  },
+  { to: '/panel/mensajes', label: 'Mensajes', icon: MessageSquare, end: false },
+  { to: '/panel/monedero', label: 'Monedero', icon: Wallet, end: false },
+  { to: '/panel/kyc', label: 'Verificación KYC', icon: ShieldCheck, end: false },
+  { to: '/panel/catalog-sync', label: 'Sincronizar Catalogo', icon: RefreshCw, end: false },
+  { to: '/panel/api-keys', label: 'Sincronización API', icon: Key, end: false },
 ]
 
 export default function PanelLayout() {

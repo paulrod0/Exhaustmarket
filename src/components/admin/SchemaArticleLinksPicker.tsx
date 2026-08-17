@@ -95,7 +95,10 @@ export default function SchemaArticleLinksPicker({ mode }: Props) {
     return () => {
       cancelled = true
     }
-  }, [mode, parentId])
+    // Dep en primitivos estables (mode es un objeto inline recreado en cada
+    // render del padre → si dependiéramos de `mode` entraríamos en bucle infinito).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode.kind, parentId])
 
   const takenIds = new Set(
     links.map((l) => (mode.kind === 'for-schema' ? l.article_id : l.schema_id)),
@@ -185,12 +188,16 @@ export default function SchemaArticleLinksPicker({ mode }: Props) {
       {links.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 14 }}>
           {links.map((l) => {
+            // El facade no soporta selects anidados, así que el título del artículo/esquema
+            // lo tomamos de la lista de opciones (que sí traemos con columnas explícitas).
+            const optLabel = allOptions.find((o) => o.id === (mode.kind === 'for-schema' ? l.article_id : l.schema_id))?.label
             const label =
               mode.kind === 'for-schema'
-                ? l.articles?.title ?? '(artículo borrado)'
-                : (l as any).exhaust_schemas
-                  ? `${(l as any).exhaust_schemas.brand} ${(l as any).exhaust_schemas.model}`
-                  : '(esquema borrado)'
+                ? optLabel ?? l.articles?.title ?? '(artículo borrado)'
+                : optLabel
+                  ?? ((l as any).exhaust_schemas
+                    ? `${(l as any).exhaust_schemas.brand} ${(l as any).exhaust_schemas.model}`
+                    : '(esquema borrado)')
             return (
               <div
                 key={l.id}

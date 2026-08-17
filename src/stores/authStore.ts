@@ -90,25 +90,37 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return
     }
 
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', user.id)
-      .maybeSingle()
-
-    if (error) throw error
-
-    set({ profile: data })
+    // user.id ahora es Clerk ID (`user_xxx`). user_profiles tiene PK UUID
+    // separada. /api/me hace el mapeo via clerk_user_id (o reclama por email
+    // en primer login).
+    const { auth } = await import('../lib/auth-client')
+    const token = await auth.__getToken()
+    if (!token) {
+      set({ profile: null })
+      return
+    }
+    const res = await fetch('/api/me', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({}),
+    })
+    if (!res.ok) {
+      set({ profile: null })
+      return
+    }
+    const json = (await res.json()) as { data: UserProfile | null }
+    set({ profile: json.data })
   },
 
   updateProfile: async (updates) => {
-    const user = get().user
-    if (!user) throw new Error('No user logged in')
+    const profile = get().profile
+    if (!profile) throw new Error('No profile loaded')
 
+    // Actualizar por UUID del profile (no por Clerk ID).
     const { error } = await supabase
       .from('user_profiles')
       .update({ ...updates, updated_at: new Date().toISOString() } as any)
-      .eq('id', user.id)
+      .eq('id', profile.id)
 
     if (error) throw error
 

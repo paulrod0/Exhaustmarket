@@ -1,20 +1,18 @@
 import { useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
-import { supabase } from '../lib/supabase';
+import { auth } from '../lib/auth-client';
 import { Check } from 'lucide-react';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-
 async function startCheckout(tier: string, interval: 'monthly' | 'yearly') {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('No hay sesión activa');
+  const token = await auth.__getToken();
+  if (!token) throw new Error('No hay sesión activa');
 
   const origin = window.location.origin;
-  const res = await fetch(`${SUPABASE_URL}/functions/v1/create-checkout-session`, {
+  const res = await fetch('/api/stripe-checkout', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${session.access_token}`,
+      'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify({
       tier,

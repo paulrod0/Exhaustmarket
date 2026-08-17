@@ -26,7 +26,7 @@ async function uploadToBucket(
   const safeExt = sanitize(ext).slice(0, 5) || 'jpg'
   const path = `${prefix}/${randomId()}-${sanitize(file.name.slice(0, 40))}.${safeExt}`
 
-  const { error } = await supabase.storage
+  const { data, error } = await supabase.storage
     .from(bucket)
     .upload(path, file, {
       cacheControl: '3600',
@@ -35,9 +35,10 @@ async function uploadToBucket(
     })
 
   if (error) throw error
-
-  const { data } = supabase.storage.from(bucket).getPublicUrl(path)
-  return data.publicUrl
+  // `upload()` ya devuelve la URL pública COMPLETA de R2 en data.path.
+  // (Antes se llamaba a getPublicUrl con la ruta relativa → guardaba una URL rota.)
+  if (!data?.path) throw new Error('Subida sin URL pública')
+  return data.path
 }
 
 async function deleteFromBucket(bucket: string, publicUrl: string): Promise<void> {
