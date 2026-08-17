@@ -1,7 +1,5 @@
-import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './stores/authStore'
-import { supabase } from './lib/supabase'
 import Layout from './components/Layout'
 import PanelLayout from './components/PanelLayout'
 import HomePage from './pages/HomePage'
@@ -36,41 +34,41 @@ import AdminArticlesListPage from './pages/admin/AdminArticlesListPage'
 import AdminArticleEditorPage from './pages/admin/AdminArticleEditorPage'
 import AdminUsersPage from './pages/admin/AdminUsersPage'
 import AdminSubscriptionsPage from './pages/admin/AdminSubscriptionsPage'
+import AdminVehiclesListPage from './pages/admin/AdminVehiclesListPage'
+import AdminVehicleEditorPage from './pages/admin/AdminVehicleEditorPage'
+import AdminPartsListPage from './pages/admin/AdminPartsListPage'
+import AdminPartEditorPage from './pages/admin/AdminPartEditorPage'
+import AdminAftermarketProductsListPage from './pages/admin/AdminAftermarketProductsListPage'
+import AdminAftermarketProductEditorPage from './pages/admin/AdminAftermarketProductEditorPage'
+import AdminQAPanelPage from './pages/admin/AdminQAPanelPage'
+import AdminKycReviewPage from './pages/admin/AdminKycReviewPage'
+import CompatibilidadPage from './pages/CompatibilidadPage'
+import MarketplaceBrowsePage from './pages/MarketplaceBrowsePage'
+import MarketplaceProductPage from './pages/MarketplaceProductPage'
+import MarketplaceCartPage from './pages/MarketplaceCartPage'
+import MarketplaceOrdersPage from './pages/MarketplaceOrdersPage'
+import PanelKycPage from './pages/panel/PanelKycPage'
+import PanelMessagesPage from './pages/panel/PanelMessagesPage'
+import PanelWalletPage from './pages/panel/PanelWalletPage'
 import ToastHost from './components/ToastHost'
 
 function App() {
-  const { setUser, setLoading, fetchProfile } = useAuthStore()
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        fetchProfile().catch(console.error)
-      }
-      setLoading(false)
-    })
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      (async () => {
-        setUser(session?.user ?? null)
-        if (session?.user) {
-          await fetchProfile().catch(console.error)
-        }
-      })()
-    })
-
-    return () => subscription.unsubscribe()
-  }, [setUser, setLoading, fetchProfile])
-
+  // El bootstrap de auth lo maneja <AuthBridge /> en main.tsx desde los hooks
+  // de Clerk. Aqui ya no llamamos a supabase.auth.getSession() para evitar la
+  // race-condition que causaba el loop login<->dashboard.
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
-          <Route path="login" element={<LoginPage />} />
-          <Route path="register" element={<RegisterPage />} />
+          <Route path="login/*" element={<LoginPage />} />
+          <Route path="register/*" element={<RegisterPage />} />
           <Route path="dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-          <Route path="marketplace" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
+          <Route path="marketplace" element={<MarketplaceBrowsePage />} />
+          <Route path="marketplace/:kind/:id" element={<MarketplaceProductPage />} />
+          <Route path="marketplace/carrito" element={<MarketplaceCartPage />} />
+          <Route path="marketplace/pedidos" element={<ProtectedRoute><MarketplaceOrdersPage /></ProtectedRoute>} />
+          <Route path="marketplace-legacy" element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
           <Route path="profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
           <Route path="subscriptions" element={<ProtectedRoute><SubscriptionsPage /></ProtectedRoute>} />
           <Route path="quotes" element={<ProtectedRoute><QuotesPage /></ProtectedRoute>} />
@@ -82,6 +80,7 @@ function App() {
           <Route path="guias" element={<GuidesPage />} />
           <Route path="guias/:slug" element={<GuideDetailPage />} />
           <Route path="payment-result" element={<PaymentResultPage />} />
+          <Route path="compatibilidad" element={<CompatibilidadPage />} />
         </Route>
         <Route path="panel" element={<PanelGuard><PanelLayout /></PanelGuard>}>
           <Route index element={<PanelDashboardPage />} />
@@ -90,6 +89,9 @@ function App() {
           <Route path="invoices" element={<PanelInvoicesPage />} />
           <Route path="catalog-sync" element={<PanelCatalogSyncPage />} />
           <Route path="api-keys" element={<PanelApiKeysPage />} />
+          <Route path="kyc" element={<PanelKycPage />} />
+          <Route path="mensajes" element={<PanelMessagesPage />} />
+          <Route path="monedero" element={<PanelWalletPage />} />
         </Route>
         <Route path="admin" element={<AdminGuard><AdminLayout /></AdminGuard>}>
           <Route index element={<AdminDashboardPage />} />
@@ -104,6 +106,19 @@ function App() {
           <Route path="articulos/:id" element={<AdminArticleEditorPage />} />
           <Route path="usuarios" element={<AdminUsersPage />} />
           <Route path="suscripciones" element={<AdminSubscriptionsPage />} />
+
+          {/* === Catálogo relacional v2 (formularios A/B/C/D) === */}
+          <Route path="data/vehiculos" element={<AdminVehiclesListPage />} />
+          <Route path="data/vehiculos/nuevo" element={<AdminVehicleEditorPage />} />
+          <Route path="data/vehiculos/:id" element={<AdminVehicleEditorPage />} />
+          <Route path="data/piezas" element={<AdminPartsListPage />} />
+          <Route path="data/piezas/nuevo" element={<AdminPartEditorPage />} />
+          <Route path="data/piezas/:id" element={<AdminPartEditorPage />} />
+          <Route path="data/productos" element={<AdminAftermarketProductsListPage />} />
+          <Route path="data/productos/nuevo" element={<AdminAftermarketProductEditorPage />} />
+          <Route path="data/productos/:id" element={<AdminAftermarketProductEditorPage />} />
+          <Route path="qa" element={<AdminQAPanelPage />} />
+          <Route path="kyc" element={<AdminKycReviewPage />} />
         </Route>
       </Routes>
       <ToastHost />

@@ -11,6 +11,10 @@ import {
   TrendingUp,
   Calendar,
   Loader2,
+  Car,
+  Wrench,
+  Tag,
+  ClipboardCheck,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
@@ -28,6 +32,14 @@ interface Stats {
   subsActive: number
   mrr: number
   recentUsers: Array<{ id: string; full_name: string | null; email: string | null; created_at: string; user_type: string }>
+  // v2 stats
+  vehiclesTotal: number
+  vehiclesApproved: number
+  enginesTotal: number
+  partsTotal: number
+  partsOemKnown: number
+  productsTotal: number
+  pendingQa: number
 }
 
 export default function AdminDashboardPage() {
@@ -35,7 +47,8 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     ;(async () => {
-      const [schemasRes, brandsRes, articlesRes, usersRes, subsRes, recentUsersRes] =
+      const [schemasRes, brandsRes, articlesRes, usersRes, subsRes, recentUsersRes,
+             vehiclesRes, enginesRes, partsRes, productsRes] =
         await Promise.all([
           supabase.from('exhaust_schemas' as any).select('id, is_active, cover_url'),
           supabase.from('aftermarket_brands' as any).select('id, is_active'),
@@ -50,6 +63,10 @@ export default function AdminDashboardPage() {
             .select('id, full_name, email, created_at, user_type')
             .order('created_at', { ascending: false })
             .limit(5),
+          supabase.from('vehicles' as any).select('id, status'),
+          supabase.from('engines' as any).select('id'),
+          supabase.from('exhaust_parts' as any).select('id, oem_ref, oem_not_found, status'),
+          supabase.from('exhaust_aftermarket_products' as any).select('id, status'),
         ])
 
       const schemas = (schemasRes.data ?? []) as Array<{ id: string; is_active: boolean; cover_url: string | null }>
@@ -62,6 +79,17 @@ export default function AdminDashboardPage() {
         if (!t) return sum
         return sum + (s.billing_cycle === 'monthly' ? Number(t.price_monthly) : Number(t.price_yearly) / 12)
       }, 0)
+
+      const vehicles = (vehiclesRes.data ?? []) as Array<{ id: string; status: string }>
+      const engines = (enginesRes.data ?? []) as Array<{ id: string }>
+      const parts = (partsRes.data ?? []) as Array<{ id: string; oem_ref: string | null; oem_not_found: boolean; status: string }>
+      const products = (productsRes.data ?? []) as Array<{ id: string; status: string }>
+
+      const pendingQa = [
+        ...vehicles.filter((v) => v.status === 'submitted' || v.status === 'needs_changes'),
+        ...parts.filter((p) => p.status === 'submitted' || p.status === 'needs_changes'),
+        ...products.filter((p) => p.status === 'submitted' || p.status === 'needs_changes'),
+      ].length
 
       setStats({
         schemas: schemas.length,
@@ -77,6 +105,13 @@ export default function AdminDashboardPage() {
         subsActive: subs.length,
         mrr,
         recentUsers: (recentUsersRes.data ?? []) as any,
+        vehiclesTotal: vehicles.length,
+        vehiclesApproved: vehicles.filter((v) => v.status === 'approved').length,
+        enginesTotal: engines.length,
+        partsTotal: parts.length,
+        partsOemKnown: parts.filter((p) => p.oem_ref && !p.oem_not_found).length,
+        productsTotal: products.length,
+        pendingQa,
       })
     })()
   }, [])
@@ -151,6 +186,59 @@ export default function AdminDashboardPage() {
           icon={<CreditCard size={18} />}
         />
       </div>
+
+      {/* V2 catalog stats */}
+      <section style={sectionStyle}>
+        <h2 style={sectionTitleStyle}>Catálogo relacional (v2)</h2>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: 12,
+          }}
+        >
+          <StatCard
+            to="/admin/data/vehiculos"
+            label="Vehículos"
+            value={stats.vehiclesTotal}
+            sub={`${stats.vehiclesApproved} aprobados`}
+            color="#0071E3"
+            icon={<Car size={18} />}
+          />
+          <StatCard
+            to="/admin/data/vehiculos"
+            label="Motores registrados"
+            value={stats.enginesTotal}
+            sub="Versiones diferenciadas"
+            color="#5856D6"
+            icon={<TrendingUp size={18} />}
+          />
+          <StatCard
+            to="/admin/data/piezas"
+            label="Piezas OEM"
+            value={stats.partsTotal}
+            sub={`${stats.partsOemKnown} con referencia OEM`}
+            color="#34C759"
+            icon={<Wrench size={18} />}
+          />
+          <StatCard
+            to="/admin/data/productos"
+            label="Productos aftermarket"
+            value={stats.productsTotal}
+            sub="Catálogo comercial"
+            color="#FF9500"
+            icon={<Tag size={18} />}
+          />
+          <StatCard
+            to="/admin/qa"
+            label="Pendientes QA"
+            value={stats.pendingQa}
+            sub={stats.pendingQa === 0 ? 'Sin nada a revisar' : 'Revisar urgente'}
+            color={stats.pendingQa > 0 ? '#FF3B30' : '#86868B'}
+            icon={<ClipboardCheck size={18} />}
+          />
+        </div>
+      </section>
 
       {/* Quick actions */}
       <section style={sectionStyle}>

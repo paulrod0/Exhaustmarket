@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
-import { Layers, LogOut, ArrowLeft, Factory, BookOpen, LayoutDashboard, Users, CreditCard } from 'lucide-react'
+import { Layers, LogOut, ArrowLeft, Factory, BookOpen, LayoutDashboard, Users, CreditCard, Car, Wrench, Tag, ClipboardCheck, ShieldCheck } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
 
 export default function AdminLayout() {
@@ -15,17 +15,27 @@ export default function AdminLayout() {
       ],
     },
     {
-      title: 'Contenido',
+      title: 'Catálogo (v1)',
       links: [
-        { to: '/admin/esquemas', label: 'Esquemas', icon: Layers },
+        { to: '/admin/esquemas', label: 'Esquemas (legacy)', icon: Layers },
         { to: '/admin/marcas', label: 'Marcas aftermarket', icon: Factory },
         { to: '/admin/articulos', label: 'Artículos / tutoriales', icon: BookOpen },
+      ],
+    },
+    {
+      title: 'Datos técnicos (v2)',
+      links: [
+        { to: '/admin/data/vehiculos', label: 'Vehículos', icon: Car },
+        { to: '/admin/data/piezas', label: 'Piezas OEM', icon: Wrench },
+        { to: '/admin/data/productos', label: 'Productos aftermarket', icon: Tag },
+        { to: '/admin/qa', label: 'Panel QA', icon: ClipboardCheck },
       ],
     },
     {
       title: 'CRM',
       links: [
         { to: '/admin/usuarios', label: 'Usuarios', icon: Users },
+        { to: '/admin/kyc', label: 'Verificaciones KYC', icon: ShieldCheck },
         { to: '/admin/suscripciones', label: 'Suscripciones', icon: CreditCard },
       ],
     },

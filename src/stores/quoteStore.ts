@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
+import { attachRelated, attachChildren } from '../lib/joinRelated'
 import type { Database } from '../types/database'
 
 type QuoteRequest = Database['public']['Tables']['quote_requests']['Row']
@@ -117,7 +118,7 @@ export const useQuoteStore = create<QuoteState>((set, get) => ({
 
     const { data, error } = await supabase
       .from('quote_requests')
-      .select('*, target:user_profiles!target_user_id(id, full_name, company_name, email), quotes(*)')
+      .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
 
@@ -126,7 +127,11 @@ export const useQuoteStore = create<QuoteState>((set, get) => ({
       return
     }
 
-    set({ sentRequests: data as any })
+    let rows = await attachRelated((data as any[]) ?? [], [
+      { table: 'user_profiles', fk: 'target_user_id', as: 'target', columns: 'id, full_name, company_name, email' },
+    ])
+    rows = await attachChildren(rows, { table: 'quotes', parentKey: 'id', childFk: 'quote_request_id', as: 'quotes' })
+    set({ sentRequests: rows as any })
   },
 
   fetchReceivedRequests: async () => {
@@ -135,7 +140,7 @@ export const useQuoteStore = create<QuoteState>((set, get) => ({
 
     const { data, error } = await supabase
       .from('quote_requests')
-      .select('*, sender:user_profiles!user_id(id, full_name, company_name, email), quotes(*)')
+      .select('*')
       .eq('target_user_id', user.id)
       .order('created_at', { ascending: false })
 
@@ -144,7 +149,11 @@ export const useQuoteStore = create<QuoteState>((set, get) => ({
       return
     }
 
-    set({ receivedRequests: data as any })
+    let rows = await attachRelated((data as any[]) ?? [], [
+      { table: 'user_profiles', fk: 'user_id', as: 'sender', columns: 'id, full_name, company_name, email' },
+    ])
+    rows = await attachChildren(rows, { table: 'quotes', parentKey: 'id', childFk: 'quote_request_id', as: 'quotes' })
+    set({ receivedRequests: rows as any })
   },
 
   respondToQuote: async (data) => {

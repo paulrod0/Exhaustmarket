@@ -37,8 +37,8 @@ export default function PhotoUploader({
         if (!file.type.startsWith('image/')) {
           throw new Error(`El archivo "${file.name}" no es una imagen`)
         }
-        if (file.size > 20 * 1024 * 1024) {
-          throw new Error(`"${file.name}" supera el límite de 20 MB antes de comprimir`)
+        if (file.size > 25 * 1024 * 1024) {
+          throw new Error(`"${file.name}" supera el límite de 25 MB antes de comprimir`)
         }
         // Compresión automática en el navegador: max 1920px, WebP cuando se pueda
         const compressed = await compressImage(file)
@@ -158,7 +158,7 @@ export default function PhotoUploader({
               Arrastra fotos aquí o haz clic para subir
             </p>
             <p style={{ fontSize: 11, color: '#86868B', margin: 0 }}>
-              PNG / JPG · máximo 10 MB cada una · la primera será la portada
+              PNG / JPG · máximo 25 MB cada una (por foto) · la primera será la portada
             </p>
           </>
         )}

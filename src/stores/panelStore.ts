@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
+import { attachRelated } from '../lib/joinRelated'
 import type { Database } from '../types/database'
 
 type Product = Database['public']['Tables']['professional_products']['Row']
@@ -172,12 +173,15 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 
     const { data, error } = await supabase
       .from('transactions')
-      .select('*, buyer:user_profiles!buyer_id(full_name)')
+      .select('*')
       .eq('seller_id', user.id)
       .order('created_at', { ascending: false })
 
     if (error) { set({ error: error.message }); return }
-    set({ myTransactions: data as any ?? [] })
+    const withBuyer = await attachRelated((data as any[]) ?? [], [
+      { table: 'user_profiles', fk: 'buyer_id', as: 'buyer', columns: 'id, full_name' },
+    ])
+    set({ myTransactions: withBuyer as any })
   },
 
   // --- Invoices ---
