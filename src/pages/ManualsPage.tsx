@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { uploadTutorialFile } from '../lib/storage'
 import { useAuthStore } from '../stores/authStore'
-import { canSeeWorkshopData } from '../lib/contentTypes'
+import { canDownloadManual } from '../lib/contentTypes'
 import { FileText, Download, Search, Upload, Plus, X, ChevronRight, Lock } from 'lucide-react'
 
 interface Manual {
@@ -48,8 +48,7 @@ export default function ManualsPage() {
   const profileId = useAuthStore((s) => (s.profile as { id?: string } | null)?.id ?? null)
   const userType = useAuthStore((s) => (s.profile as { user_type?: string } | null)?.user_type ?? null)
   const navigate = useNavigate()
-  // Dossier: descargar manuales = Taller+ (canSeeWorkshopData). El server anula file_url si no.
-  const canDownloadManuals = canSeeWorkshopData(userType, isAdmin)
+  // Descarga por manual: Taller+ mínimo y respeta required_tier (helper canDownloadManual).
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     title: '', description: '', car_brand: '', car_model: '',
@@ -118,7 +117,7 @@ export default function ManualsPage() {
 
   function handleDownload(manual: Manual) {
     // Descarga gated por tier: el servidor anula file_url para quien no tiene acceso.
-    if (!canDownloadManuals || !manual.file_url) {
+    if (!canDownloadManual(manual.required_tier, userType, isAdmin) || !manual.file_url) {
       navigate(profileId ? '/subscriptions' : '/register')
       return
     }
@@ -344,7 +343,7 @@ export default function ManualsPage() {
       {selected && (
         <ManualDetailModal
           manual={selected}
-          locked={!canDownloadManuals}
+          locked={!canDownloadManual(selected.required_tier, userType, isAdmin)}
           onClose={() => setSelected(null)}
           onDownload={() => handleDownload(selected)}
           formatFileSize={formatFileSize}

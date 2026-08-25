@@ -45,7 +45,9 @@ const canWS = (c: RedactCtx) => c.isAdmin || rankOf(c.userType) >= 1 // Taller+
 // Espejo EXACTO de canViewTiers en src/lib/contentTypes.ts.
 function tierSatisfies(userType: string | null, allowed: string[]): boolean {
   if (!allowed.length) return true
-  const need = Math.min(...allowed.map(rankOf))
+  if (!userType) return false // anónimo no ve contenido gated (align con canViewTiers del cliente)
+  // Un tier DESCONOCIDO/typo en allowed_tiers cuenta como Infinity (no baja el listón) => fail-closed.
+  const need = Math.min(...allowed.map((t) => TIER_RANK[t] ?? Infinity))
   return rankOf(userType) >= need
 }
 
@@ -98,9 +100,10 @@ function redactDiagram(row: Record<string, unknown>, c: RedactCtx): Record<strin
 // Manuales: la lista es pública, pero descargar (file_url) exige el tier del manual.
 // required_tier 'standard' (o nulo) = descarga libre; cualquier otro = Taller+ (canWS).
 function redactManual(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
-  // Dossier: descargar manuales es Taller+ (el Particular no tiene manuales). La lista sigue
-  // siendo pública (título/marca/modelo/tipo); solo se recorta file_url.
-  if (canWS(c)) return row
+  // Dossier: descargar manuales es Taller+ (el Particular no tiene manuales). Además se respeta
+  // el required_tier del manual si exige un tier superior. La lista sigue pública; solo file_url.
+  const need = Math.max(1, rankOf(String(row.required_tier ?? 'standard')))
+  if (c.isAdmin || rankOf(c.userType) >= need) return row
   return { ...row, file_url: null }
 }
 // Guías/artículos: espejo EXACTO de canViewTiers. allowed_tiers vacío/null = público.
@@ -152,7 +155,9 @@ const RULES: Record<string, Rule> = {
   // Presupuestos: hijos de quote_requests. Los ve el solicitante (user_id) y el taller (target_user_id).
   quotes: { read: 'authed', write: 'authed', ownerVia: { column: 'quote_request_id', parentTable: 'quote_requests', parentOwnerColumns: ['user_id', 'target_user_id'], insertColumn: 'quoted_by' } },
   // Facturas (PII + importes): visibles para vendedor Y comprador; el vendedor las emite (insert).
-  invoices: { read: 'authed', write: 'authed', ownerAny: ['seller_id', 'buyer_id'] },
+  // Facturas (PII + importes): visibles para vendedor Y comprador (ownerAny). La EMISIÓN/mutación
+  // NO puede venir del cliente (forjaría facturas atribuidas a terceros) -> write admin.
+  invoices: { read: 'authed', write: 'admin', ownerAny: ['seller_id', 'buyer_id'] },
   professional_products: { read: 'public', write: 'authed', ownerColumn: 'professional_id' },
   workshop_services: { read: 'public', write: 'authed', ownerColumn: 'workshop_id' },
   design_3d: { read: 'oem', write: 'oem', ownerColumn: 'uploaded_by', publicColumn: 'is_public' },

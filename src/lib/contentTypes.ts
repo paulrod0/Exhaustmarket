@@ -87,7 +87,7 @@ export function canViewTiers(
   if (isAdmin) return true
   if (!allowedTiers || allowedTiers.length === 0) return true
   if (!userTier) return false
-  const need = Math.min(...allowedTiers.map(rankOf)) // tier mínimo exigido
+  const need = Math.min(...allowedTiers.map((t) => TIER_RANK[t] ?? Infinity)) // desconocido no baja el listón
   return rankOf(userTier) >= need
 }
 
@@ -97,6 +97,16 @@ export function canSeeOem(userTier: string | null | undefined, isAdmin = false):
 }
 export function canSeeWorkshopData(userTier: string | null | undefined, isAdmin = false): boolean {
   return isAdmin || rankOf(userTier) >= 1 // Taller+
+}
+
+/** ¿Puede descargar este manual? Taller+ mínimo (dossier) y además respeta required_tier. */
+export function canDownloadManual(
+  requiredTier: string | null | undefined,
+  userTier: string | null | undefined,
+  isAdmin = false,
+): boolean {
+  const need = Math.max(1, rankOf(requiredTier ?? 'standard'))
+  return isAdmin || rankOf(userTier) >= need
 }
 
 /**
