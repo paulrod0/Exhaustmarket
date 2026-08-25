@@ -32,24 +32,21 @@ interface AuthContext {
 
 // ─── Gating por rol (suscripciones) ───
 // Fabricante = premium | manufacturer (ambos nombres existen en subscription_tiers).
-const OEM_ROLES = new Set(['professional', 'premium', 'manufacturer'])
-const WORKSHOP_ROLES = new Set(['workshop', 'professional', 'premium', 'manufacturer'])
+// Jerarquía de tiers (dossier): standard(0) < taller(1) < profesional(2) < fabricante(3).
+// premium y manufacturer = mismo nivel máximo ("Fabricante"). Un tier superior ve todo lo
+// de los inferiores. allowed_tiers se interpreta como "tier mínimo".
+const TIER_RANK: Record<string, number> = { standard: 0, workshop: 1, professional: 2, premium: 3, manufacturer: 3 }
+const rankOf = (t: string | null) => (t != null && TIER_RANK[t] != null ? TIER_RANK[t] : 0)
 type RedactCtx = { userType: string | null; isAdmin: boolean }
-const canOEM = (c: RedactCtx) => c.isAdmin || (!!c.userType && OEM_ROLES.has(c.userType))
-const canWS = (c: RedactCtx) => c.isAdmin || (!!c.userType && WORKSHOP_ROLES.has(c.userType))
+const canOEM = (c: RedactCtx) => c.isAdmin || rankOf(c.userType) >= 2 // Profesional+
+const canWS = (c: RedactCtx) => c.isAdmin || rankOf(c.userType) >= 1 // Taller+
 
-// premium y manufacturer son el mismo nivel ("Fabricante"). allowed_tiers nunca contiene
-// 'manufacturer' (el admin UI solo ofrece hasta 'premium'), así que sin este alias un
-// usuario 'manufacturer' (tier máximo) quedaría bloqueado de TODO el contenido gated.
+// allowed_tiers = tier mínimo exigido: satisface quien iguala o supera el rango más bajo.
 // Espejo EXACTO de canViewTiers en src/lib/contentTypes.ts.
-const TIER_ALIASES: Record<string, string[]> = {
-  premium: ['premium', 'manufacturer'],
-  manufacturer: ['manufacturer', 'premium'],
-}
 function tierSatisfies(userType: string | null, allowed: string[]): boolean {
-  if (!userType) return false
-  const names = TIER_ALIASES[userType] ?? [userType]
-  return names.some((n) => allowed.includes(n))
+  if (!allowed.length) return true
+  const need = Math.min(...allowed.map(rankOf))
+  return rankOf(userType) >= need
 }
 
 function redactSchema(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
@@ -101,8 +98,9 @@ function redactDiagram(row: Record<string, unknown>, c: RedactCtx): Record<strin
 // Manuales: la lista es pública, pero descargar (file_url) exige el tier del manual.
 // required_tier 'standard' (o nulo) = descarga libre; cualquier otro = Taller+ (canWS).
 function redactManual(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
-  const req = String(row.required_tier ?? 'standard')
-  if (req === 'standard' || canWS(c)) return row
+  // Dossier: descargar manuales es Taller+ (el Particular no tiene manuales). La lista sigue
+  // siendo pública (título/marca/modelo/tipo); solo se recorta file_url.
+  if (canWS(c)) return row
   return { ...row, file_url: null }
 }
 // Guías/artículos: espejo EXACTO de canViewTiers. allowed_tiers vacío/null = público.

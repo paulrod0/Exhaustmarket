@@ -157,7 +157,9 @@ function PanelGuard({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />
   }
 
-  if (profile?.user_type !== 'workshop' && profile?.user_type !== 'professional') {
+  // Vendedores: Taller, Profesional y Fabricante (premium/manufacturer). El Particular no.
+  const SELLER_TYPES = ['workshop', 'professional', 'premium', 'manufacturer']
+  if (!SELLER_TYPES.includes(profile?.user_type ?? '')) {
     return <Navigate to="/dashboard" replace />
   }
 

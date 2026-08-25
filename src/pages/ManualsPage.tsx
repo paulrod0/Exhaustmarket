@@ -48,8 +48,8 @@ export default function ManualsPage() {
   const profileId = useAuthStore((s) => (s.profile as { id?: string } | null)?.id ?? null)
   const userType = useAuthStore((s) => (s.profile as { user_type?: string } | null)?.user_type ?? null)
   const navigate = useNavigate()
-  const canDownloadManual = (m: Manual) =>
-    m.required_tier === 'standard' || canSeeWorkshopData(userType, isAdmin)
+  // Dossier: descargar manuales = Taller+ (canSeeWorkshopData). El server anula file_url si no.
+  const canDownloadManuals = canSeeWorkshopData(userType, isAdmin)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     title: '', description: '', car_brand: '', car_model: '',
@@ -118,7 +118,7 @@ export default function ManualsPage() {
 
   function handleDownload(manual: Manual) {
     // Descarga gated por tier: el servidor anula file_url para quien no tiene acceso.
-    if (!canDownloadManual(manual) || !manual.file_url) {
+    if (!canDownloadManuals || !manual.file_url) {
       navigate(profileId ? '/subscriptions' : '/register')
       return
     }
@@ -344,7 +344,7 @@ export default function ManualsPage() {
       {selected && (
         <ManualDetailModal
           manual={selected}
-          locked={!canDownloadManual(selected)}
+          locked={!canDownloadManuals}
           onClose={() => setSelected(null)}
           onDownload={() => handleDownload(selected)}
           formatFileSize={formatFileSize}

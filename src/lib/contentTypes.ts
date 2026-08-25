@@ -74,6 +74,11 @@ export const USER_TIER_SHORT_LABEL: Record<UserTier, string> = {
  * Comprueba si un usuario puede ver contenido con los tiers requeridos.
  * Convención: array vacío (o null) = público (todos pueden verlo).
  */
+// Jerarquía de tiers (espejo EXACTO de api/db.ts): standard(0) < taller(1) < profesional(2)
+// < fabricante(3). premium y manufacturer = mismo nivel máximo. allowed_tiers = tier mínimo.
+const TIER_RANK: Record<string, number> = { standard: 0, workshop: 1, professional: 2, premium: 3, manufacturer: 3 }
+const rankOf = (t: string | null | undefined) => (t != null && TIER_RANK[t] != null ? TIER_RANK[t] : 0)
+
 export function canViewTiers(
   allowedTiers: string[] | null | undefined,
   userTier: string | null | undefined,
@@ -82,25 +87,16 @@ export function canViewTiers(
   if (isAdmin) return true
   if (!allowedTiers || allowedTiers.length === 0) return true
   if (!userTier) return false
-  // premium y manufacturer son el mismo nivel ("Fabricante"); allowed_tiers nunca contiene
-  // 'manufacturer', así que sin este alias un manufacturer quedaría bloqueado de todo.
-  // Debe coincidir con tierSatisfies() en api/db.ts.
-  const names = userTier === 'premium' ? ['premium', 'manufacturer']
-    : userTier === 'manufacturer' ? ['manufacturer', 'premium']
-    : [userTier]
-  return names.some((t) => allowedTiers.includes(t))
+  const need = Math.min(...allowedTiers.map(rankOf)) // tier mínimo exigido
+  return rankOf(userTier) >= need
 }
 
 // ─── Gating por sección (espejo EXACTO de api/db.ts) ───
-// Fabricante = premium | manufacturer. El servidor recorta los campos; esto es UX.
-const OEM_TIERS = ['professional', 'premium', 'manufacturer']
-const WORKSHOP_TIERS = ['workshop', 'professional', 'premium', 'manufacturer']
-
 export function canSeeOem(userTier: string | null | undefined, isAdmin = false): boolean {
-  return isAdmin || (!!userTier && OEM_TIERS.includes(userTier))
+  return isAdmin || rankOf(userTier) >= 2 // Profesional+
 }
 export function canSeeWorkshopData(userTier: string | null | undefined, isAdmin = false): boolean {
-  return isAdmin || (!!userTier && WORKSHOP_TIERS.includes(userTier))
+  return isAdmin || rankOf(userTier) >= 1 // Taller+
 }
 
 /**
