@@ -126,6 +126,14 @@ interface Rule {
   write: 'public' | 'authed' | 'admin' | 'oem'
   ownerColumn?: string
   publicColumn?: string
+  // Tablas con DOS partes (buyer/seller, sender/recipient): la fila es propia si CUALQUIERA
+  // de estas columnas == auth.profileId. Se usa EN LUGAR de ownerColumn (no combinar): acota
+  // lectura y update/delete con (colA = yo OR colB = yo); insert se valida en canWrite.
+  ownerAny?: string[]
+  // Propiedad heredada de una fila padre (p.ej. quotes → quote_requests): visible/editable si
+  // el padre pertenece al usuario por CUALQUIERA de parentOwnerColumns. insertColumn valida el
+  // insert (columna que debe == yo, p.ej. quotes.quoted_by).
+  ownerVia?: { column: string; parentTable: string; parentOwnerColumns: string[]; insertColumn?: string }
 }
 
 const RULES: Record<string, Rule> = {
@@ -139,10 +147,14 @@ const RULES: Record<string, Rule> = {
   catalog_sources: { read: 'public', write: 'admin' },
   user_profiles: { read: 'authed', write: 'authed', ownerColumn: 'id' },
   user_subscriptions: { read: 'authed', write: 'admin' },
-  transactions: { read: 'authed', write: 'authed' },
+  // Movimientos económicos: visibles para comprador Y vendedor; los crea/actualiza el
+  // settlement (webhook/marketplace) por SQL directo, nunca el cliente vía facade → write admin.
+  transactions: { read: 'authed', write: 'admin', ownerAny: ['buyer_id', 'seller_id'] },
   quote_requests: { read: 'authed', write: 'authed', ownerColumn: 'user_id' },
-  quotes: { read: 'authed', write: 'authed' },
-  invoices: { read: 'authed', write: 'authed' },
+  // Presupuestos: hijos de quote_requests. Los ve el solicitante (user_id) y el taller (target_user_id).
+  quotes: { read: 'authed', write: 'authed', ownerVia: { column: 'quote_request_id', parentTable: 'quote_requests', parentOwnerColumns: ['user_id', 'target_user_id'], insertColumn: 'quoted_by' } },
+  // Facturas (PII + importes): visibles para vendedor Y comprador; el vendedor las emite (insert).
+  invoices: { read: 'authed', write: 'authed', ownerAny: ['seller_id', 'buyer_id'] },
   professional_products: { read: 'public', write: 'authed', ownerColumn: 'professional_id' },
   workshop_services: { read: 'public', write: 'authed', ownerColumn: 'workshop_id' },
   design_3d: { read: 'oem', write: 'oem', ownerColumn: 'uploaded_by', publicColumn: 'is_public' },
@@ -160,9 +172,13 @@ const RULES: Record<string, Rule> = {
   sources: { read: 'public', write: 'admin' },
   qa_reviews: { read: 'admin', write: 'admin' },
   // === v3 marketplace ===
-  marketplace_orders: { read: 'authed', write: 'authed' },
-  marketplace_order_items: { read: 'authed', write: 'authed' },
-  marketplace_messages: { read: 'authed', write: 'authed' },
+  // Pedidos: visibles para comprador Y vendedor; toda mutación va por /api/marketplace (SQL
+  // directo con validación de estado), nunca por el facade → write admin.
+  marketplace_orders: { read: 'authed', write: 'admin', ownerAny: ['buyer_id', 'seller_id'] },
+  // Líneas de pedido y mensajería: SOLO se sirven/mutan por /api/marketplace (order_detail,
+  // seller_stats, list_threads, send_message...). El cliente nunca los toca por el facade → admin.
+  marketplace_order_items: { read: 'admin', write: 'admin' },
+  marketplace_messages: { read: 'admin', write: 'admin' },
   wallets: { read: 'authed', write: 'admin', ownerColumn: 'user_id' },
   wallet_transactions: { read: 'authed', write: 'admin', ownerColumn: 'user_id' },
 }
@@ -247,14 +263,47 @@ function canWrite(table: string, auth: AuthContext | null, row?: Record<string, 
   if (r.write === 'public') return true
   if (auth.isAdmin) return true
   if (r.write === 'oem' && !canOEM({ userType: auth.userType, isAdmin: auth.isAdmin })) return false
-  if (r.ownerColumn && row) return row[r.ownerColumn] === auth.profileId
+  if (row) {
+    // Insert: la fila debe pertenecer al usuario. Se admite cualquiera de los esquemas de
+    // propietario (columna simple, dos-partes ownerAny, o insertColumn de ownerVia).
+    if (r.ownerColumn) return row[r.ownerColumn] === auth.profileId
+    if (r.ownerAny?.length) return r.ownerAny.some((c) => row[c] === auth.profileId)
+    if (r.ownerVia?.insertColumn) return row[r.ownerVia.insertColumn] === auth.profileId
+  }
   return true
+}
+
+// Scoping por dueño para tablas multi-parte (ownerAny) o hijas de otra tabla (ownerVia).
+// Additivo respecto a ownerFilter (que solo maneja ownerColumn simple): estas tablas NO llevan
+// ownerColumn, así que ownerFilter las ignora y aquí devolvemos el predicado OR/subquery. El
+// valor comparado es SIEMPRE auth.profileId (= user_profiles.id, uuid), nunca el clerk_user_id.
+function ownerScopeMulti(table: string, auth: AuthContext | null, values: unknown[]): string {
+  const r = RULES[table]
+  if (!r || !auth || auth.isAdmin) return ''
+  const me = auth.profileId ?? '__no_profile__'
+  if (r.ownerAny?.length) {
+    values.push(me)
+    const p = `$${values.length}`
+    return `(${r.ownerAny.map((c) => `${ident(c)} = ${p}`).join(' OR ')})`
+  }
+  if (r.ownerVia) {
+    const { column, parentTable, parentOwnerColumns } = r.ownerVia
+    values.push(me)
+    const p = `$${values.length}`
+    const conds = parentOwnerColumns.map((c) => `${ident(c)} = ${p}`).join(' OR ')
+    return `${ident(column)} IN (SELECT id FROM ${ident(parentTable)} WHERE ${conds})`
+  }
+  return ''
 }
 
 function ownerFilter(table: string, auth: AuthContext | null, forWrite = false): { column: string; value: string } | null {
   const r = RULES[table]
   if (!r || !r.ownerColumn || !auth || auth.isAdmin) return null
-  if (r.read === 'public') return null // tablas de lectura pública: writes se controlan aparte (sin cambio)
+  // La lectura pública NO implica escritura pública. En SELECT (forWrite=false) no scopeamos por
+  // dueño → el catálogo sigue siendo visible para todos. En UPDATE/DELETE (forWrite=true) una fila
+  // de una tabla con ownerColumn (professional_products.professional_id / workshop_services.workshop_id,
+  // ambas = user_profiles.id = profileId) pertenece a su dueño y NO es editable por otros usuarios.
+  if (r.read === 'public' && !forWrite) return null
   // publicColumn (p.ej. design_3d) SOLO relaja la LECTURA: en select la visibilidad
   // owner-OR-public se resuelve con un predicado aparte. En ESCRITURA (update/delete) el
   // scoping por dueño debe seguir aplicando: una fila pública no es editable por otros.
@@ -290,6 +339,10 @@ export async function POST(req: Request): Promise<Response> {
         values.push(auth.profileId ?? '__no_profile__')
         where += `${where ? ' AND' : ' WHERE'} (${ident(rule.ownerColumn)} = $${values.length} OR ${ident(rule.publicColumn)} = TRUE)`
       }
+      // Scoping multi-parte (transactions/invoices/marketplace_orders) o hija (quotes): el no-admin
+      // solo ve filas donde es una de las partes. Sin esto, read:'authed' devolvería TODAS las filas.
+      const extraScope = ownerScopeMulti(body.table, auth, values)
+      if (extraScope) where += `${where ? ' AND' : ' WHERE'} ${extraScope}`
       const order = buildOrder(body.order)
       const limit = body.limit ? ` LIMIT ${Number(body.limit)}` : ''
       const single = body.single || body.maybeSingle
@@ -348,7 +401,10 @@ export async function POST(req: Request): Promise<Response> {
       const filters: Filter[] = [...(body.filters ?? [])]
       const oFilter = ownerFilter(body.table, auth, true) // escritura = owner-only (aunque haya publicColumn)
       if (oFilter) filters.push([oFilter.column, 'eq', oFilter.value])
-      const where = buildWhere(filters, values)
+      let where = buildWhere(filters, values)
+      // Scoping multi-parte/hija (además de ownerFilter): update solo afecta filas propias.
+      const extraScope = ownerScopeMulti(body.table, auth, values)
+      if (extraScope) where += `${where ? ' AND' : ' WHERE'} ${extraScope}`
       const q = `UPDATE ${ident(body.table)} SET ${sets.join(',')}${where} RETURNING *`
       const result = (await pool.query(q, values)).rows as Record<string, unknown>[]
       return json({ data: (body.single || body.maybeSingle) ? (result[0] ?? null) : result, error: null })
@@ -358,9 +414,13 @@ export async function POST(req: Request): Promise<Response> {
       const filters: Filter[] = [...(body.filters ?? [])]
       const oFilter = ownerFilter(body.table, auth, true) // escritura = owner-only (aunque haya publicColumn)
       if (oFilter) filters.push([oFilter.column, 'eq', oFilter.value])
-      if (!filters.length) return json({ data: null, error: { message: 'delete requires filters' } }, 400)
       const values: unknown[] = []
-      const where = buildWhere(filters, values)
+      let where = buildWhere(filters, values)
+      // Scoping multi-parte/hija (además de ownerFilter): delete solo afecta filas propias.
+      const extraScope = ownerScopeMulti(body.table, auth, values)
+      if (extraScope) where += `${where ? ' AND' : ' WHERE'} ${extraScope}`
+      // Nunca un DELETE sin WHERE: exige o filtros del cliente o un scope de propietario.
+      if (!where) return json({ data: null, error: { message: 'delete requires filters' } }, 400)
       const q = `DELETE FROM ${ident(body.table)}${where} RETURNING *`
       const result = (await pool.query(q, values)).rows as Record<string, unknown>[]
       return json({ data: (body.single || body.maybeSingle) ? (result[0] ?? null) : result, error: null })
