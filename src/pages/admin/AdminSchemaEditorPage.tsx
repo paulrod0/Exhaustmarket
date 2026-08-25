@@ -250,12 +250,19 @@ export default function AdminSchemaEditorPage() {
       'Pega el ID del esquema a clonar, o busca "ferrari-296" para buscarlo por texto.\n\nO simplemente deja vacío y cancela.',
     )
     if (!input || !input.trim()) return
-    const { data: sources } = await supabase
-      .from('exhaust_schemas' as any)
-      .select('*')
-      .or(`id.eq.${input.trim()},brand.ilike.%${input.trim()}%,model.ilike.%${input.trim()}%`)
-      .limit(1)
-    const src = (sources ?? [])[0] as any
+    // El facade no soporta .or(): resolvemos id-exacto, marca y modelo por separado
+    // (prioridad id > brand > model) y nos quedamos con la primera coincidencia.
+    const q = input.trim()
+    const [byId, byBrand, byModel] = await Promise.all([
+      supabase.from('exhaust_schemas' as any).select('*').eq('id', q).limit(1),
+      supabase.from('exhaust_schemas' as any).select('*').ilike('brand', `%${q}%`).limit(1),
+      supabase.from('exhaust_schemas' as any).select('*').ilike('model', `%${q}%`).limit(1),
+    ])
+    const src = [
+      ...((byId.data as any[]) ?? []),
+      ...((byBrand.data as any[]) ?? []),
+      ...((byModel.data as any[]) ?? []),
+    ][0] as any
     if (!src) {
       toast.error('No se encontró ningún esquema con ese criterio.')
       return

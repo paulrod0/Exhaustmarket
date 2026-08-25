@@ -82,7 +82,13 @@ export function canViewTiers(
   if (isAdmin) return true
   if (!allowedTiers || allowedTiers.length === 0) return true
   if (!userTier) return false
-  return allowedTiers.includes(userTier)
+  // premium y manufacturer son el mismo nivel ("Fabricante"); allowed_tiers nunca contiene
+  // 'manufacturer', así que sin este alias un manufacturer quedaría bloqueado de todo.
+  // Debe coincidir con tierSatisfies() en api/db.ts.
+  const names = userTier === 'premium' ? ['premium', 'manufacturer']
+    : userTier === 'manufacturer' ? ['manufacturer', 'premium']
+    : [userTier]
+  return names.some((t) => allowedTiers.includes(t))
 }
 
 // ─── Gating por sección (espejo EXACTO de api/db.ts) ───

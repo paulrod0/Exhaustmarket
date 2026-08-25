@@ -38,12 +38,26 @@ type RedactCtx = { userType: string | null; isAdmin: boolean }
 const canOEM = (c: RedactCtx) => c.isAdmin || (!!c.userType && OEM_ROLES.has(c.userType))
 const canWS = (c: RedactCtx) => c.isAdmin || (!!c.userType && WORKSHOP_ROLES.has(c.userType))
 
+// premium y manufacturer son el mismo nivel ("Fabricante"). allowed_tiers nunca contiene
+// 'manufacturer' (el admin UI solo ofrece hasta 'premium'), así que sin este alias un
+// usuario 'manufacturer' (tier máximo) quedaría bloqueado de TODO el contenido gated.
+// Espejo EXACTO de canViewTiers en src/lib/contentTypes.ts.
+const TIER_ALIASES: Record<string, string[]> = {
+  premium: ['premium', 'manufacturer'],
+  manufacturer: ['manufacturer', 'premium'],
+}
+function tierSatisfies(userType: string | null, allowed: string[]): boolean {
+  if (!userType) return false
+  const names = TIER_ALIASES[userType] ?? [userType]
+  return names.some((n) => allowed.includes(n))
+}
+
 function redactSchema(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
   // Bloqueo por suscripción (allowed_tiers): si el esquema exige tiers y el usuario
   // no los cumple, redacción estricta (como si no fuera ni OEM ni Taller).
   const allowedTiers = row.allowed_tiers
   const tierLocked = Array.isArray(allowedTiers) && allowedTiers.length > 0
-    && !(c.userType && (allowedTiers as string[]).includes(c.userType))
+    && !tierSatisfies(c.userType, allowedTiers as string[])
   const oem = !tierLocked && canOEM(c)
   const ws = !tierLocked && canWS(c)
   if (oem && ws) return row
@@ -68,6 +82,12 @@ function redactSchema(row: Record<string, unknown>, c: RedactCtx): Record<string
     }
     out.components = clean
   }
+  if (tierLocked) {
+    // El diagrama (materiales/temperaturas/consejos) y la galería son contenido de pago:
+    // el cliente los presenta como exclusivos, así que no deben viajar en la respuesta.
+    out.components = {}
+    out.gallery_urls = []
+  }
   return out
 }
 function redactPart(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
@@ -90,7 +110,7 @@ function redactManual(row: Record<string, unknown>, c: RedactCtx): Record<string
 function redactArticle(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
   const allowed = row.allowed_tiers
   if (!Array.isArray(allowed) || allowed.length === 0) return row
-  if (c.userType && (allowed as string[]).includes(c.userType)) return row
+  if (tierSatisfies(c.userType, allowed as string[])) return row
   return { ...row, content_md: null, video_url: null, attachment_url: null }
 }
 const REDACTORS: Partial<Record<string, (r: Record<string, unknown>, c: RedactCtx) => Record<string, unknown>>> = {
@@ -231,11 +251,14 @@ function canWrite(table: string, auth: AuthContext | null, row?: Record<string, 
   return true
 }
 
-function ownerFilter(table: string, auth: AuthContext | null): { column: string; value: string } | null {
+function ownerFilter(table: string, auth: AuthContext | null, forWrite = false): { column: string; value: string } | null {
   const r = RULES[table]
   if (!r || !r.ownerColumn || !auth || auth.isAdmin) return null
-  if (r.read === 'public') return null
-  if (r.publicColumn) return null // visibilidad owner-OR-public: se resuelve con predicado aparte
+  if (r.read === 'public') return null // tablas de lectura pública: writes se controlan aparte (sin cambio)
+  // publicColumn (p.ej. design_3d) SOLO relaja la LECTURA: en select la visibilidad
+  // owner-OR-public se resuelve con un predicado aparte. En ESCRITURA (update/delete) el
+  // scoping por dueño debe seguir aplicando: una fila pública no es editable por otros.
+  if (r.publicColumn && !forWrite) return null
   return { column: r.ownerColumn, value: auth.profileId ?? '__no_profile__' }
 }
 
@@ -323,7 +346,7 @@ export async function POST(req: Request): Promise<Response> {
       const values: unknown[] = []
       const sets = cols.map((c) => { values.push((body.data as Record<string, unknown>)[c]); return `${ident(c)} = $${values.length}` })
       const filters: Filter[] = [...(body.filters ?? [])]
-      const oFilter = ownerFilter(body.table, auth)
+      const oFilter = ownerFilter(body.table, auth, true) // escritura = owner-only (aunque haya publicColumn)
       if (oFilter) filters.push([oFilter.column, 'eq', oFilter.value])
       const where = buildWhere(filters, values)
       const q = `UPDATE ${ident(body.table)} SET ${sets.join(',')}${where} RETURNING *`
@@ -333,7 +356,7 @@ export async function POST(req: Request): Promise<Response> {
 
     if (body.op === 'delete') {
       const filters: Filter[] = [...(body.filters ?? [])]
-      const oFilter = ownerFilter(body.table, auth)
+      const oFilter = ownerFilter(body.table, auth, true) // escritura = owner-only (aunque haya publicColumn)
       if (oFilter) filters.push([oFilter.column, 'eq', oFilter.value])
       if (!filters.length) return json({ data: null, error: { message: 'delete requires filters' } }, 400)
       const values: unknown[] = []

@@ -51,7 +51,9 @@ export default function SchemaRelatedPanel({
         .from('articles' as any)
         .select('*')
         .eq('is_published', true)
-        .or(`tags.cs.{${brandLc}},tags.cs.{${layoutLc}}`)
+        // El facade no soporta .or(); `tags @> {brand} OR tags @> {layout}` equivale
+        // a `tags && {brand, layout}` (overlaps), que sí es un filtro soportado.
+        .overlaps('tags', [brandLc, layoutLc])
         .order('published_at', { ascending: false })
         .limit(3)
 
