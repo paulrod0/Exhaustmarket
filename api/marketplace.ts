@@ -83,6 +83,7 @@ async function createOrder(auth: AuthCtx, body: { items?: unknown; shipping_addr
   let sellerId: string | null = null
 
   for (const it of items) {
+    if (!Number.isInteger(it.quantity) || it.quantity <= 0) return json({ error: `bad quantity for ${it.product_id}` }, 400)
     const table = it.product_type === 'professional_product' ? 'professional_products' :
                   it.product_type === 'workshop_service' ? 'workshop_services' :
                   it.product_type === 'aftermarket_product' ? 'exhaust_aftermarket_products' : null
@@ -114,9 +115,12 @@ async function createOrder(auth: AuthCtx, body: { items?: unknown; shipping_addr
   for (const p of productRows) {
     const stdPrice = Number(p.price ?? p.base_price ?? 0)
     const proPrice = p.pro_price != null ? Number(p.pro_price) : null
+    // pro solo aplica si es más barato (misma regla que effectivePrice en el cliente).
     const usePro = buyerIsPro && p._product_type === 'professional_product'
-      && proPrice != null && Number.isFinite(proPrice) && proPrice > 0
-    const unitPrice = usePro ? (proPrice as number) : stdPrice
+      && proPrice != null && Number.isFinite(proPrice) && proPrice > 0 && proPrice < stdPrice
+    // Redondeo a céntimos enteros: garantiza que el total guardado y el cobro de Stripe
+    // (Math.round(unit_price*100)) coincidan exactamente, sin ruido de coma flotante.
+    const unitPrice = Math.round((usePro ? (proPrice as number) : stdPrice) * 100) / 100
     const qty = Number(p._quantity ?? 1)
     const lineTotal = unitPrice * qty
     subtotal += lineTotal

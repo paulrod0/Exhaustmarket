@@ -117,7 +117,8 @@ export function effectivePrice(
   const base = Number(product?.price ?? 0)
   const proRaw = product?.pro_price
   const pro = proRaw == null ? null : Number(proRaw)
-  const proApplies = pro != null && Number.isFinite(pro) && pro > 0 && canSeeWorkshopData(userTier, isAdmin)
+  // pro < base: el precio pro solo aplica si es realmente más barato (evita "descuentos" que encarecen).
+  const proApplies = pro != null && Number.isFinite(pro) && pro > 0 && pro < base && canSeeWorkshopData(userTier, isAdmin)
   return proApplies ? { price: pro, base, isPro: true } : { price: base, base, isPro: false }
 }
 
