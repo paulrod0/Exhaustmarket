@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../lib/supabase'
 import { uploadTutorialFile } from '../lib/storage'
 import { useAuthStore } from '../stores/authStore'
-import { FileText, Download, Search, Upload, Plus, X } from 'lucide-react'
+import { FileText, Download, Search, Upload, Plus, X, ChevronRight } from 'lucide-react'
 
 interface Manual {
   id: string
@@ -38,6 +38,7 @@ export default function ManualsPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedType, setSelectedType] = useState<string>('all')
+  const [selected, setSelected] = useState<Manual | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Subida (solo admin)
@@ -306,77 +307,90 @@ export default function ManualsPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredManuals.map((manual) => (
-            <div key={manual.id} className="card-apple" style={{ padding: '24px' }}>
-              {/* Card Header */}
-              <div className="flex items-start gap-4" style={{ marginBottom: '16px' }}>
-                <div
-                  className="flex items-center justify-center flex-shrink-0"
-                  style={{
-                    width: '44px',
-                    height: '44px',
-                    borderRadius: '12px',
-                    backgroundColor: '#F5F5F7',
-                  }}
-                >
-                  <FileText size={22} style={{ color: '#86868B' }} />
+        <div style={{ maxWidth: 820, margin: '0 auto', border: '1px solid #F2F2F7', borderRadius: 16, overflow: 'hidden', background: '#FFFFFF' }}>
+          {filteredManuals.map((manual, i) => (
+            <button key={manual.id} onClick={() => setSelected(manual)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 14, width: '100%', padding: '13px 18px',
+                border: 'none', borderTop: i === 0 ? 'none' : '1px solid #F2F2F7',
+                cursor: 'pointer', background: 'transparent', textAlign: 'left', transition: 'background .15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#FAFAFA' }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}>
+              <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: '#F5F5F7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <FileText size={16} style={{ color: '#86868B' }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 15, fontWeight: 600, color: '#1D1D1F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{manual.title}</span>
+                  <span className="badge badge-green" style={{ flexShrink: 0 }}>{manualTypeLabels[manual.manual_type]}</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <h3
-                    className="truncate"
-                    style={{
-                      fontSize: '17px',
-                      fontWeight: 600,
-                      color: '#1D1D1F',
-                      marginBottom: '4px',
-                    }}
-                  >
-                    {manual.title}
-                  </h3>
-                  <p style={{ fontSize: '14px', color: '#6E6E73', marginBottom: '8px' }}>
-                    {manual.car_brand} {manual.car_model}
-                  </p>
-                  <span className="badge badge-green">
-                    {manualTypeLabels[manual.manual_type]}
-                  </span>
+                <div style={{ fontSize: 13, color: '#86868B', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {manual.car_brand} {manual.car_model} · {formatFileSize(manual.file_size)}
                 </div>
               </div>
-
-              {/* Description */}
-              <p
-                className="line-clamp-2"
-                style={{
-                  fontSize: '14px',
-                  lineHeight: '1.5',
-                  color: '#6E6E73',
-                  marginBottom: '20px',
-                }}
-              >
-                {manual.description}
-              </p>
-
-              {/* Footer */}
-              <div
-                className="flex items-center justify-between"
-                style={{ paddingTop: '16px', borderTop: '1px solid #E5E5EA' }}
-              >
-                <span style={{ fontSize: '13px', color: '#86868B' }}>
-                  {formatFileSize(manual.file_size)}
-                </span>
-                <button
-                  onClick={() => handleDownload(manual)}
-                  className="btn-pill btn-primary btn-sm"
-                  style={{ gap: '6px', display: 'inline-flex', alignItems: 'center' }}
-                >
-                  <Download size={14} />
-                  Descargar
-                </button>
-              </div>
-            </div>
+              <ChevronRight size={18} style={{ color: '#C7C7CC', flexShrink: 0 }} />
+            </button>
           ))}
         </div>
       )}
+
+      {selected && (
+        <ManualDetailModal
+          manual={selected}
+          onClose={() => setSelected(null)}
+          onDownload={() => handleDownload(selected)}
+          formatFileSize={formatFileSize}
+        />
+      )}
+    </div>
+  )
+}
+
+function ManualDetailModal({ manual, onClose, onDownload, formatFileSize }: {
+  manual: Manual; onClose: () => void; onDownload: () => void; formatFileSize: (b: number) => string
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = '' }
+  }, [onClose])
+
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 1000 }}>
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ background: '#FFFFFF', borderRadius: 18, maxWidth: 520, width: '100%', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 12px 48px rgba(0,0,0,.18)' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '22px 24px 16px', borderBottom: '1px solid #F2F2F7' }}>
+          <div style={{ width: 44, height: 44, borderRadius: 12, backgroundColor: '#F5F5F7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <FileText size={22} style={{ color: '#86868B' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h3 style={{ fontSize: 19, fontWeight: 600, color: '#1D1D1F', margin: 0, lineHeight: 1.3 }}>{manual.title}</h3>
+            <p style={{ fontSize: 14, color: '#6E6E73', margin: '4px 0 0' }}>{manual.car_brand} {manual.car_model}</p>
+          </div>
+          <button onClick={onClose} aria-label="Cerrar"
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#86868B', display: 'flex' }}>
+            <X size={20} />
+          </button>
+        </div>
+        <div style={{ padding: '18px 24px' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+            <span className="badge badge-green">{manualTypeLabels[manual.manual_type]}</span>
+            <span className="badge badge-gray">{formatFileSize(manual.file_size)}</span>
+          </div>
+          <p style={{ fontSize: 15, lineHeight: 1.6, color: '#3A3A3C', margin: 0, whiteSpace: 'pre-wrap' }}>
+            {manual.description}
+          </p>
+        </div>
+        <div style={{ padding: '16px 24px 22px', borderTop: '1px solid #F2F2F7' }}>
+          <button onClick={onDownload} className="btn-pill btn-primary"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <Download size={16} /> Descargar / Ver PDF
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

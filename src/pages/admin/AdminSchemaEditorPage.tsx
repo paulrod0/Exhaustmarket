@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { ArrowLeft, Save, Trash2, Loader2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -8,6 +8,7 @@ import {
   blankComponentsForLayout,
   sortedComponents,
   reindexComponents,
+  EURO_NORMS,
   type ExhaustComponent,
   type ExhaustSchemaRecord,
   type Layout,
@@ -15,6 +16,8 @@ import {
   type CostBreakdown,
 } from '../../lib/schemaDefinitions'
 import PhotoUploader from '../../components/admin/PhotoUploader'
+import { uploadExhaustPhoto, deleteExhaustPhoto } from '../../lib/storage'
+import { compressImage } from '../../lib/imageCompress'
 import BrandSuggestionsPicker from '../../components/admin/BrandSuggestionsPicker'
 import TierSelector from '../../components/admin/TierSelector'
 import SchemaArticleLinksPicker from '../../components/admin/SchemaArticleLinksPicker'
@@ -27,6 +30,7 @@ interface FormState {
   year: string
   engine: string
   power: string
+  emissions: string
   layout: Layout
   color: string
   note: string
@@ -50,6 +54,7 @@ const emptyState = (): FormState => ({
   year: '',
   engine: '',
   power: '',
+  emissions: '',
   layout: DEFAULT_LAYOUT,
   color: '#0071E3',
   note: '',
@@ -99,6 +104,7 @@ export default function AdminSchemaEditorPage() {
           year: row.year ?? '',
           engine: row.engine ?? '',
           power: row.power ?? '',
+          emissions: row.emissions ?? '',
           layout: row.layout,
           color: row.color ?? '#0071E3',
           note: row.note ?? '',
@@ -157,7 +163,8 @@ export default function AdminSchemaEditorPage() {
   }
 
   function removeComponent(cid: string) {
-    if (!window.confirm('¿Quitar este componente del esquema?')) return
+    // Sin window.confirm (bloqueaba el hilo). Los cambios no se persisten hasta
+    // pulsar "Guardar", así que un clic accidental se deshace recargando.
     setForm((prev) => {
       const next = { ...prev.components }
       delete next[cid]
@@ -191,6 +198,7 @@ export default function AdminSchemaEditorPage() {
       year: form.year.trim(),
       engine: form.engine.trim(),
       power: form.power.trim(),
+      emissions: form.emissions.trim() || null,
       layout: form.layout,
       color: form.color,
       note: form.note.trim() || null,
@@ -469,6 +477,18 @@ export default function AdminSchemaEditorPage() {
               placeholder="830 CV"
             />
           </Field>
+          <Field label="Normativa de emisiones">
+            <select
+              style={inputStyle}
+              value={form.emissions}
+              onChange={(e) => setForm({ ...form, emissions: e.target.value })}
+            >
+              <option value="">No aplica/Desconocida</option>
+              {EURO_NORMS.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </Field>
           <Field label="Layout (arquitectura)">
             <select
               style={inputStyle}
@@ -665,14 +685,6 @@ export default function AdminSchemaEditorPage() {
                         placeholder="Inconel, Titanio, Acero inox 321…"
                       />
                     </Field>
-                    <Field label="Temperatura operativa">
-                      <input
-                        style={inputStyle}
-                        value={comp.temp}
-                        onChange={(e) => updateComponent(comp.id, { temp: e.target.value })}
-                        placeholder="850°C"
-                      />
-                    </Field>
                   </Grid>
                   <Field label="Descripción técnica">
                     <textarea
@@ -692,6 +704,12 @@ export default function AdminSchemaEditorPage() {
                       placeholder="Akrapovic es el proveedor OEM de Lamborghini…"
                     />
                   </Field>
+
+                  <ComponentPhotoField
+                    schemaId={id && id !== 'nuevo' ? id : tempId}
+                    url={comp.image_url}
+                    onChange={(next) => updateComponent(comp.id, { image_url: next })}
+                  />
 
                   {/* Datos técnicos para profesionales */}
                   <div
@@ -792,34 +810,6 @@ export default function AdminSchemaEditorPage() {
                           }
                           placeholder="322"
                         />
-                      </Field>
-                      <Field label="Dificultad">
-                        <select
-                          style={inputStyle}
-                          value={comp.difficulty ?? ''}
-                          onChange={(e) =>
-                            updateComponent(comp.id, {
-                              difficulty: (e.target.value || undefined) as 'baja' | 'media' | 'alta' | undefined,
-                            })
-                          }
-                        >
-                          <option value="">(sin definir)</option>
-                          <option value="baja">Baja</option>
-                          <option value="media">Media</option>
-                          <option value="alta">Alta</option>
-                        </select>
-                      </Field>
-                      <Field label="¿Es fabricable?">
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '8px 0' }}>
-                          <input
-                            type="checkbox"
-                            checked={comp.fabricable ?? false}
-                            onChange={(e) => updateComponent(comp.id, { fabricable: e.target.checked })}
-                          />
-                          <span style={{ fontSize: 13 }}>
-                            {comp.fabricable ? 'Sí, fabricable' : 'No (solo OEM/aftermarket)'}
-                          </span>
-                        </label>
                       </Field>
                     </Grid>
                   </div>
@@ -1044,6 +1034,62 @@ function Grid({ children }: { children: React.ReactNode }) {
     >
       {children}
     </div>
+  )
+}
+
+function ComponentPhotoField({
+  schemaId, url, onChange,
+}: {
+  schemaId: string
+  url: string | null | undefined
+  onChange: (next: string | undefined) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function pick(files: FileList | null) {
+    const file = files?.[0]
+    if (!file) return
+    if (!file.type.startsWith('image/')) { setErr('El archivo no es una imagen'); return }
+    setErr(null); setBusy(true)
+    try {
+      const compressed = await compressImage(file)
+      const newUrl = await uploadExhaustPhoto(compressed, schemaId)
+      if (url) void deleteExhaustPhoto(url).catch(() => {})
+      onChange(newUrl)
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Error al subir la foto')
+    } finally {
+      setBusy(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <Field label="Foto del componente (opcional)">
+      <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }}
+        onChange={(e) => pick(e.target.files)} />
+      {url ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <img src={url} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: 'cover', border: '1px solid #E5E5EA' }} />
+          <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}
+            style={{ ...inputStyle, width: 'auto', cursor: 'pointer', color: '#0071E3' }}>
+            {busy ? 'Subiendo…' : 'Cambiar'}
+          </button>
+          <button type="button" onClick={() => { if (url) void deleteExhaustPhoto(url).catch(() => {}); onChange(undefined) }}
+            style={{ ...inputStyle, width: 'auto', cursor: 'pointer', color: '#D70015' }}>
+            Quitar
+          </button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}
+          style={{ ...inputStyle, cursor: 'pointer', textAlign: 'left', color: busy ? '#86868B' : '#0071E3' }}>
+          {busy ? 'Subiendo…' : '+ Subir foto'}
+        </button>
+      )}
+      {err && <p style={{ fontSize: 11, color: '#D70015', margin: '4px 0 0' }}>{err}</p>}
+    </Field>
   )
 }
 

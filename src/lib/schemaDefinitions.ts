@@ -184,6 +184,8 @@ export interface ExhaustComponent {
   total_cost?: number                    // €
   difficulty?: 'baja' | 'media' | 'alta'
   fabricable?: boolean                   // si es fabricable o solo OEM/aftermarket
+  /** Foto del componente (opcional, 1 por componente). Se guarda dentro del jsonb `components`. */
+  image_url?: string
 }
 
 export interface DespieceItem {
@@ -202,6 +204,22 @@ export interface CostBreakdown {
   currency?: string                      // "EUR" por defecto
 }
 
+/** Normativas Euro para el badge del esquema (label con año de entrada en vigor).
+ *  '' = "No aplica/Desconocida" (default). */
+export const EURO_NORMS = [
+  'Pre-Euro',
+  'Euro 1 (1992)', 'Euro 2 (1996)', 'Euro 3 (2000)', 'Euro 4 (2005)',
+  'Euro 5a (2009)', 'Euro 5b (2011)',
+  'Euro 6 (2014)', 'Euro 6c (2017)', 'Euro 6d-TEMP (2017)', 'Euro 6d (2020)', 'Euro 6e (2024)',
+  'Euro 7 (2026-27)',
+] as const
+
+/** Texto compacto para el badge (quita el año): 'Euro 4 (2005)' → 'Euro 4'. null si no debe pintarse. */
+export function emissionsBadgeLabel(value?: string | null): string | null {
+  if (!value || value === 'No aplica/Desconocida') return null
+  return value.replace(/\s*\(.*\)\s*$/, '')
+}
+
 export interface ExhaustSchemaRecord {
   id: string
   brand: string
@@ -209,6 +227,7 @@ export interface ExhaustSchemaRecord {
   year: string
   engine: string
   power: string
+  emissions: string | null
   layout: Layout
   color: string
   note: string | null
