@@ -9,10 +9,12 @@ import { S3Client, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s
  * Cache-Control inmutable, de modo que el CDN de Vercel lo cachea tras el primer
  * acceso: una sola lectura de R2 por objeto y luego HIT en edge.
  *
- * Ruta: /api/img/<key>  donde key = "<prefix>/<...>" y prefix ∈ ALLOWED_PREFIXES.
- * Las keys llevan id aleatorio (inadivinables); el gating por suscripción vive en
- * los REDACTORS de /api/db (qué URLs se emiten), no en los bytes — igual que hoy con
- * el dominio público r2.dev. Self-contained (sin _lib: romperia en Vercel).
+ * Ruta pública: /api/img/<key>  (vercel.json reescribe a /api/img?key=<key>, porque
+ * los catch-all [...key] de Vercel no capturan bien varios segmentos en este proyecto).
+ * key = "<prefix>/<...>" con prefix ∈ ALLOWED_PREFIXES. Las keys llevan id aleatorio
+ * (inadivinables); el gating por suscripción vive en los REDACTORS de /api/db (qué URLs
+ * se emiten), no en los bytes — igual que hoy con el dominio público r2.dev.
+ * Self-contained (sin _lib: romperia en Vercel).
  */
 
 const ALLOWED_PREFIXES = new Set(['exhaust-photos', 'content-media', 'tutorial-files'])
@@ -31,9 +33,10 @@ function res(body: BodyInit | null, status: number, headers: Record<string, stri
   return new Response(body, { status, headers })
 }
 
-/** Devuelve la key validada o null si es inválida. */
+/** Devuelve la key validada o null si es inválida. Lee ?key= (rewrite) o el pathname. */
 function parseKey(url: string): string | null {
-  const raw = new URL(url).pathname.replace(/^\/api\/img\//, '')
+  const u = new URL(url)
+  const raw = u.searchParams.get('key') ?? u.pathname.replace(/^\/api\/img\/?/, '')
   let key: string
   try {
     key = decodeURIComponent(raw)
