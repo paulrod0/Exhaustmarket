@@ -72,7 +72,7 @@ function redactDiagram(row: Record<string, unknown>, c: RedactCtx): Record<strin
   if (canWS(c)) return row
   return { ...row, total_estimated_cost: null }
 }
-const REDACTORS: Record<string, (r: Record<string, unknown>, c: RedactCtx) => Record<string, unknown>> = {
+const REDACTORS: Partial<Record<string, (r: Record<string, unknown>, c: RedactCtx) => Record<string, unknown>>> = {
   exhaust_schemas: redactSchema,
   exhaust_parts: redactPart,
   exhaust_diagrams: redactDiagram,
@@ -240,7 +240,7 @@ export async function POST(req: Request): Promise<Response> {
       const q = `SELECT ${buildSelect(body.columns)} FROM ${ident(body.table)}${where}${order}${single ? ' LIMIT 2' : limit}`
       const rawRows = (await pool.query(q, values)).rows as Record<string, unknown>[]
       // Gating por rol (suscripciones): recorta campos sensibles según el tier del token.
-      const redactor: ((r: Record<string, unknown>, c: RedactCtx) => Record<string, unknown>) | undefined = REDACTORS[body.table]
+      const redactor = REDACTORS[body.table]
       const ctx: RedactCtx = { userType: auth?.userType ?? null, isAdmin: Boolean(auth?.isAdmin) }
       const rows = redactor && !ctx.isAdmin ? rawRows.map((r) => redactor(r, ctx)) : rawRows
       if (body.single) {
