@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { uploadTutorialFile } from '../lib/storage'
 import { useAuthStore } from '../stores/authStore'
+import { canSeeOem } from '../lib/contentTypes'
 import { Box, Lock, Eye, EyeOff, Plus, Upload, Download } from 'lucide-react'
 
 interface DesignFile { url: string; name: string; size: number }
@@ -25,7 +26,8 @@ export default function Design3DPage() {
   const [loading, setLoading] = useState(true)
   const [showUploadForm, setShowUploadForm] = useState(false)
 
-  const canUpload = profile?.is_admin || profile?.user_type === 'professional' || profile?.user_type === 'premium'
+  // Acceso 3D = Profesional+ (professional | premium | manufacturer), espejo de canOEM/read:'oem' del server.
+  const canUpload = canSeeOem(profile?.user_type, profile?.is_admin)
   const hasAccess = canUpload
 
   useEffect(() => {
@@ -37,11 +39,13 @@ export default function Design3DPage() {
   const fetchDesigns = async () => {
     setLoading(true)
     try {
-      // El admin ve TODOS los diseños (para revisar los que suben los colaboradores);
-      // el resto ve los suyos + los públicos.
-      let query = supabase.from('design_3d').select('*')
-      if (!profile?.is_admin) query = query.or(`uploaded_by.eq.${profile?.id},is_public.eq.true`)
-      const { data, error } = await query.order('created_at', { ascending: false })
+      // El servidor (api/db.ts) ya aplica la visibilidad: el admin ve TODOS los diseños
+      // (para revisar los de colaboradores); el resto ve los suyos + los públicos.
+      // Nota: el facade no soporta .or(), por eso el filtro va server-side.
+      const { data, error } = await supabase
+        .from('design_3d')
+        .select('*')
+        .order('created_at', { ascending: false })
 
       if (error) throw error
       setDesigns(data || [])

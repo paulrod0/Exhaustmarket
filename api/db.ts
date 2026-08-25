@@ -39,7 +39,13 @@ const canOEM = (c: RedactCtx) => c.isAdmin || (!!c.userType && OEM_ROLES.has(c.u
 const canWS = (c: RedactCtx) => c.isAdmin || (!!c.userType && WORKSHOP_ROLES.has(c.userType))
 
 function redactSchema(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
-  const oem = canOEM(c), ws = canWS(c)
+  // Bloqueo por suscripción (allowed_tiers): si el esquema exige tiers y el usuario
+  // no los cumple, redacción estricta (como si no fuera ni OEM ni Taller).
+  const allowedTiers = row.allowed_tiers
+  const tierLocked = Array.isArray(allowedTiers) && allowedTiers.length > 0
+    && !(c.userType && (allowedTiers as string[]).includes(c.userType))
+  const oem = !tierLocked && canOEM(c)
+  const ws = !tierLocked && canWS(c)
   if (oem && ws) return row
   const out: Record<string, unknown> = { ...row }
   if (!ws) {
@@ -72,16 +78,34 @@ function redactDiagram(row: Record<string, unknown>, c: RedactCtx): Record<strin
   if (canWS(c)) return row
   return { ...row, total_estimated_cost: null }
 }
+// Manuales: la lista es pública, pero descargar (file_url) exige el tier del manual.
+// required_tier 'standard' (o nulo) = descarga libre; cualquier otro = Taller+ (canWS).
+function redactManual(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
+  const req = String(row.required_tier ?? 'standard')
+  if (req === 'standard' || canWS(c)) return row
+  return { ...row, file_url: null }
+}
+// Guías/artículos: espejo EXACTO de canViewTiers. allowed_tiers vacío/null = público.
+// Si el usuario no cumple el tier, se recorta el contenido premium (cuerpo, vídeo, adjunto).
+function redactArticle(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
+  const allowed = row.allowed_tiers
+  if (!Array.isArray(allowed) || allowed.length === 0) return row
+  if (c.userType && (allowed as string[]).includes(c.userType)) return row
+  return { ...row, content_md: null, video_url: null, attachment_url: null }
+}
 const REDACTORS: Partial<Record<string, (r: Record<string, unknown>, c: RedactCtx) => Record<string, unknown>>> = {
   exhaust_schemas: redactSchema,
   exhaust_parts: redactPart,
   exhaust_diagrams: redactDiagram,
+  manuals: redactManual,
+  articles: redactArticle,
 }
 
 interface Rule {
-  read: 'public' | 'authed' | 'admin'
-  write: 'public' | 'authed' | 'admin'
+  read: 'public' | 'authed' | 'admin' | 'oem'
+  write: 'public' | 'authed' | 'admin' | 'oem'
   ownerColumn?: string
+  publicColumn?: string
 }
 
 const RULES: Record<string, Rule> = {
@@ -101,7 +125,7 @@ const RULES: Record<string, Rule> = {
   invoices: { read: 'authed', write: 'authed' },
   professional_products: { read: 'public', write: 'authed', ownerColumn: 'professional_id' },
   workshop_services: { read: 'public', write: 'authed', ownerColumn: 'workshop_id' },
-  design_3d: { read: 'authed', write: 'authed', ownerColumn: 'uploaded_by' },
+  design_3d: { read: 'oem', write: 'oem', ownerColumn: 'uploaded_by', publicColumn: 'is_public' },
   supplier_api_keys: { read: 'authed', write: 'authed', ownerColumn: 'user_id' },
   supplier_sync_logs: { read: 'authed', write: 'authed', ownerColumn: 'user_id' },
   user_documents: { read: 'authed', write: 'authed', ownerColumn: 'user_id' },
@@ -191,6 +215,7 @@ function canRead(table: string, auth: AuthContext | null): boolean {
   if (!r) return false
   if (r.read === 'public') return true
   if (!auth) return false
+  if (r.read === 'oem') return canOEM({ userType: auth.userType, isAdmin: auth.isAdmin })
   return r.read === 'admin' ? auth.isAdmin : true
 }
 
@@ -201,6 +226,7 @@ function canWrite(table: string, auth: AuthContext | null, row?: Record<string, 
   if (r.write === 'admin') return auth.isAdmin
   if (r.write === 'public') return true
   if (auth.isAdmin) return true
+  if (r.write === 'oem' && !canOEM({ userType: auth.userType, isAdmin: auth.isAdmin })) return false
   if (r.ownerColumn && row) return row[r.ownerColumn] === auth.profileId
   return true
 }
@@ -209,6 +235,7 @@ function ownerFilter(table: string, auth: AuthContext | null): { column: string;
   const r = RULES[table]
   if (!r || !r.ownerColumn || !auth || auth.isAdmin) return null
   if (r.read === 'public') return null
+  if (r.publicColumn) return null // visibilidad owner-OR-public: se resuelve con predicado aparte
   return { column: r.ownerColumn, value: auth.profileId ?? '__no_profile__' }
 }
 
@@ -229,19 +256,28 @@ export async function POST(req: Request): Promise<Response> {
 
     if (body.op === 'select') {
       if (!canRead(body.table, auth)) return json({ data: null, error: { message: 'forbidden' } }, 403)
+      const rule = RULES[body.table]
       const filters: Filter[] = [...(body.filters ?? [])]
       const oFilter = ownerFilter(body.table, auth)
       if (oFilter) filters.push([oFilter.column, 'eq', oFilter.value])
       const values: unknown[] = []
-      const where = buildWhere(filters, values)
+      let where = buildWhere(filters, values)
+      // Visibilidad owner-OR-public (p.ej. design_3d): el no-admin ve sus filas + las públicas.
+      if (rule.ownerColumn && rule.publicColumn && auth && !auth.isAdmin) {
+        values.push(auth.profileId ?? '__no_profile__')
+        where += `${where ? ' AND' : ' WHERE'} (${ident(rule.ownerColumn)} = $${values.length} OR ${ident(rule.publicColumn)} = TRUE)`
+      }
       const order = buildOrder(body.order)
       const limit = body.limit ? ` LIMIT ${Number(body.limit)}` : ''
       const single = body.single || body.maybeSingle
-      const q = `SELECT ${buildSelect(body.columns)} FROM ${ident(body.table)}${where}${order}${single ? ' LIMIT 2' : limit}`
-      const rawRows = (await pool.query(q, values)).rows as Record<string, unknown>[]
       // Gating por rol (suscripciones): recorta campos sensibles según el tier del token.
       const redactor = REDACTORS[body.table]
       const ctx: RedactCtx = { userType: auth?.userType ?? null, isAdmin: Boolean(auth?.isAdmin) }
+      // Con redactor y no-admin traemos '*' para que el redactor disponga siempre de los
+      // campos de gating (allowed_tiers, required_tier, components, ...).
+      const selectCols = redactor && !ctx.isAdmin ? '*' : buildSelect(body.columns)
+      const q = `SELECT ${selectCols} FROM ${ident(body.table)}${where}${order}${single ? ' LIMIT 2' : limit}`
+      const rawRows = (await pool.query(q, values)).rows as Record<string, unknown>[]
       const rows = redactor && !ctx.isAdmin ? rawRows.map((r) => redactor(r, ctx)) : rawRows
       if (body.single) {
         if (rows.length === 0) return json({ data: null, error: { message: 'no rows' } }, 404)

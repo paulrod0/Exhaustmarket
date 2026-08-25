@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { uploadTutorialFile } from '../lib/storage'
 import { useAuthStore } from '../stores/authStore'
-import { FileText, Download, Search, Upload, Plus, X, ChevronRight } from 'lucide-react'
+import { canSeeWorkshopData } from '../lib/contentTypes'
+import { FileText, Download, Search, Upload, Plus, X, ChevronRight, Lock } from 'lucide-react'
 
 interface Manual {
   id: string
@@ -44,6 +46,10 @@ export default function ManualsPage() {
   // Subida (solo admin)
   const isAdmin = useAuthStore((s) => Boolean((s.profile as { is_admin?: boolean } | null)?.is_admin))
   const profileId = useAuthStore((s) => (s.profile as { id?: string } | null)?.id ?? null)
+  const userType = useAuthStore((s) => (s.profile as { user_type?: string } | null)?.user_type ?? null)
+  const navigate = useNavigate()
+  const canDownloadManual = (m: Manual) =>
+    m.required_tier === 'standard' || canSeeWorkshopData(userType, isAdmin)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({
     title: '', description: '', car_brand: '', car_model: '',
@@ -111,12 +117,12 @@ export default function ManualsPage() {
   }
 
   function handleDownload(manual: Manual) {
-    // file_url ya es una URL pública de R2: abrimos en pestaña nueva (el navegador
-    // descarga o previsualiza el PDF). El antiguo .download() de Supabase ya no existe.
-    if (!manual.file_url) {
-      alert('Este manual no tiene archivo asociado')
+    // Descarga gated por tier: el servidor anula file_url para quien no tiene acceso.
+    if (!canDownloadManual(manual) || !manual.file_url) {
+      navigate(profileId ? '/subscriptions' : '/register')
       return
     }
+    // file_url es una URL pública: abrimos en pestaña nueva (el navegador descarga/previsualiza).
     window.open(manual.file_url, '_blank', 'noopener,noreferrer')
   }
 
@@ -338,6 +344,7 @@ export default function ManualsPage() {
       {selected && (
         <ManualDetailModal
           manual={selected}
+          locked={!canDownloadManual(selected)}
           onClose={() => setSelected(null)}
           onDownload={() => handleDownload(selected)}
           formatFileSize={formatFileSize}
@@ -347,8 +354,8 @@ export default function ManualsPage() {
   )
 }
 
-function ManualDetailModal({ manual, onClose, onDownload, formatFileSize }: {
-  manual: Manual; onClose: () => void; onDownload: () => void; formatFileSize: (b: number) => string
+function ManualDetailModal({ manual, locked, onClose, onDownload, formatFileSize }: {
+  manual: Manual; locked: boolean; onClose: () => void; onDownload: () => void; formatFileSize: (b: number) => string
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -387,7 +394,9 @@ function ManualDetailModal({ manual, onClose, onDownload, formatFileSize }: {
         <div style={{ padding: '16px 24px 22px', borderTop: '1px solid #F2F2F7' }}>
           <button onClick={onDownload} className="btn-pill btn-primary"
             style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-            <Download size={16} /> Descargar / Ver PDF
+            {locked
+              ? <><Lock size={16} /> Descarga para Taller+</>
+              : <><Download size={16} /> Descargar / Ver PDF</>}
           </button>
         </div>
       </div>
