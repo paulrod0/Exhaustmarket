@@ -186,6 +186,9 @@ export interface ExhaustComponent {
   fabricable?: boolean                   // si es fabricable o solo OEM/aftermarket
   /** Foto del componente (opcional, 1 por componente). Se guarda dentro del jsonb `components`. */
   image_url?: string
+  /** Productos del marketplace vinculados EXACTAMENTE a esta pieza (plug&play). Ids de
+   *  professional_products. Si está vacío, la ficha cae al emparejamiento por categoría. */
+  product_ids?: string[]
 }
 
 export interface DespieceItem {

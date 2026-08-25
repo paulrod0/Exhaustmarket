@@ -630,23 +630,31 @@ const COMP_TO_PROD: { k: string[]; t: string[] }[] = [
 /** Empareja un componente del esquema con productos del marketplace. Si no hay match
  *  específico, cae a sistemas completos (para no dejar el particular sin nada que comprar). */
 function productsForComponent(
-  comp: { id?: string; name?: string } | null,
+  comp: { id?: string; name?: string; product_ids?: string[] } | null,
   all: MarketProduct[],
-): { list: MarketProduct[]; generic: boolean } {
-  if (!comp) return { list: [], generic: false }
+): { list: MarketProduct[]; generic: boolean; exact: boolean } {
+  if (!comp) return { list: [], generic: false, exact: false }
+  const priced = all.filter((p) => p.price != null)
+  // Enlace EXACTO (plug&play): productos que el admin ató a esta pieza concreta.
+  const pids = comp.product_ids
+  if (Array.isArray(pids) && pids.length) {
+    const byId = new Map(priced.map((p) => [p.id, p]))
+    const exact = pids.map((id) => byId.get(id)).filter((p): p is MarketProduct => !!p)
+    if (exact.length) return { list: exact, generic: false, exact: true }
+  }
+  // Fallback: emparejamiento automático por categoría/nombre.
   const hay = _norm(`${comp.id ?? ''} ${comp.name ?? ''}`)
   const rule = COMP_TO_PROD.find((r) => r.k.some((k) => hay.includes(k)))
   const toks = rule?.t ?? []
-  const priced = all.filter((p) => p.price != null)
   const specific = toks.length
     ? priced.filter((p) => {
         const h = _norm(`${p.category ?? ''} ${p.product_name ?? ''}`)
         return toks.some((t) => h.includes(t))
       })
     : []
-  if (specific.length) return { list: specific, generic: false }
+  if (specific.length) return { list: specific, generic: false, exact: false }
   const systems = priced.filter((p) => _norm(p.category ?? '').includes('system'))
-  return { list: systems, generic: true }
+  return { list: systems, generic: true, exact: false }
 }
 
 export default function ExhaustSchemasPage() {
@@ -1260,11 +1268,18 @@ export default function ExhaustSchemasPage() {
 
                   {componentProducts.list.length > 0 && (
                     <div style={{ borderTop: '1px solid #F2F2F7', paddingTop: '14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 10px', flexWrap: 'wrap' }}>
                         <ShoppingBag size={14} style={{ color: car.color }} />
                         <span style={{ fontSize: '11px', color: '#86868B', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                          {componentProducts.generic ? 'Sistemas compatibles en el marketplace' : `Comprar: ${component.name}`}
+                          {componentProducts.exact
+                            ? `Recambio compatible: ${component.name}`
+                            : componentProducts.generic
+                              ? 'Sistemas compatibles en el marketplace'
+                              : `Comprar: ${component.name}`}
                         </span>
+                        {componentProducts.exact && (
+                          <span style={{ fontSize: 9, fontWeight: 700, color: '#1f7a4d', background: '#1f7a4d18', padding: '1px 6px', borderRadius: 4, letterSpacing: '0.04em' }}>PLUG &amp; PLAY</span>
+                        )}
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         {componentProducts.list.slice(0, 5).map((p) => (

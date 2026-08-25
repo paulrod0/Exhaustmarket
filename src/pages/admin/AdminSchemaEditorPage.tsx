@@ -82,6 +82,16 @@ export default function AdminSchemaEditorPage() {
   const [loading, setLoading] = useState(!isNew)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Productos del marketplace para el picker plug&play por componente.
+  const [products, setProducts] = useState<{ id: string; product_name: string; category: string | null }[]>([])
+
+  useEffect(() => {
+    supabase
+      .from('professional_products' as any)
+      .select('id, product_name, category')
+      .eq('is_active', true)
+      .then(({ data }: { data: unknown }) => setProducts((data as typeof products) ?? []))
+  }, [])
 
   useEffect(() => {
     if (isNew) return
@@ -718,6 +728,12 @@ export default function AdminSchemaEditorPage() {
                     onChange={(next) => updateComponent(comp.id, { image_url: next })}
                   />
 
+                  <ComponentProductPicker
+                    selected={comp.product_ids ?? []}
+                    all={products}
+                    onChange={(ids) => updateComponent(comp.id, { product_ids: ids })}
+                  />
+
                   {/* Datos técnicos para profesionales */}
                   <div
                     style={{
@@ -1040,6 +1056,61 @@ function Grid({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+    </div>
+  )
+}
+
+// Picker de productos del marketplace vinculados a una pieza concreta (plug&play).
+function ComponentProductPicker({ selected, all, onChange }: {
+  selected: string[]
+  all: { id: string; product_name: string; category: string | null }[]
+  onChange: (ids: string[]) => void
+}) {
+  const [q, setQ] = useState('')
+  const sel = new Set(selected)
+  const query = q.trim().toLowerCase()
+  const results = query
+    ? all.filter((p) => !sel.has(p.id) && (
+        p.product_name.toLowerCase().includes(query) || (p.category ?? '').toLowerCase().includes(query)
+      )).slice(0, 8)
+    : []
+  const chosen = selected.map((sid) => all.find((p) => p.id === sid)).filter((p): p is { id: string; product_name: string; category: string | null } => !!p)
+  return (
+    <div style={{ marginTop: 12, padding: 12, backgroundColor: '#F5FAF7', border: '1px solid #DCECE3', borderRadius: 8 }}>
+      <p style={{ fontSize: 11, fontWeight: 600, color: '#1f7a4d', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }}>
+        Recambios compatibles (plug &amp; play)
+      </p>
+      {chosen.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+          {chosen.map((p) => (
+            <span key={p.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, background: '#fff', border: '1px solid #DCECE3', borderRadius: 14, padding: '3px 6px 3px 10px' }}>
+              {p.product_name}
+              <button type="button" onClick={() => onChange(selected.filter((x) => x !== p.id))}
+                style={{ border: 'none', background: 'transparent', color: '#FF3B30', cursor: 'pointer', fontSize: 13, lineHeight: 1 }}>✕</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="Buscar producto del marketplace para vincular…"
+        style={{ width: '100%', padding: '8px 10px', border: '1px solid #D2D2D7', borderRadius: 8, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }}
+      />
+      {results.length > 0 && (
+        <div style={{ marginTop: 6, border: '1px solid #E5E5EA', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
+          {results.map((p) => (
+            <button key={p.id} type="button" onClick={() => { onChange([...selected, p.id]); setQ('') }}
+              style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', border: 'none', borderBottom: '1px solid #F2F2F7', background: 'transparent', cursor: 'pointer', textAlign: 'left', fontSize: 13 }}>
+              <span style={{ color: '#1D1D1F' }}>{p.product_name}</span>
+              <span style={{ color: '#86868B', fontSize: 11 }}>{p.category}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <p style={{ fontSize: 11, color: '#86868B', margin: '6px 0 0' }}>
+        Si vinculas productos, la ficha pública mostrará exactamente estos para esta pieza. Vacío = emparejamiento automático por categoría.
+      </p>
     </div>
   )
 }
