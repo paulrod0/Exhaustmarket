@@ -46,7 +46,10 @@ export async function POST(req: Request): Promise<Response> {
       CacheControl: 'public, max-age=31536000',
     })
     const uploadUrl = await getSignedUrl(s3, cmd, { expiresIn: 60 * 60 })
-    const publicUrl = `${PUBLIC_BASE_URL.replace(/\/$/, '')}/${key}`
+    // Servir por el proxy /api/img (mismo origen), NO por el dominio público r2.dev
+    // (rate-limited). PUBLIC_BASE_URL se mantiene validado arriba pero ya no se usa aquí.
+    const origin = new URL(req.url).origin
+    const publicUrl = `${origin}/api/img/${key}`
 
     return json({ uploadUrl, publicUrl })
   } catch (e) {
