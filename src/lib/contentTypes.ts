@@ -85,6 +85,18 @@ export function canViewTiers(
   return allowedTiers.includes(userTier)
 }
 
+// ─── Gating por sección (espejo EXACTO de api/db.ts) ───
+// Fabricante = premium | manufacturer. El servidor recorta los campos; esto es UX.
+const OEM_TIERS = ['professional', 'premium', 'manufacturer']
+const WORKSHOP_TIERS = ['workshop', 'professional', 'premium', 'manufacturer']
+
+export function canSeeOem(userTier: string | null | undefined, isAdmin = false): boolean {
+  return isAdmin || (!!userTier && OEM_TIERS.includes(userTier))
+}
+export function canSeeWorkshopData(userTier: string | null | undefined, isAdmin = false): boolean {
+  return isAdmin || (!!userTier && WORKSHOP_TIERS.includes(userTier))
+}
+
 /** Devuelve el tier "mínimo" razonable al que hay que subir para ver algo */
 export function cheapestTier(allowedTiers: string[]): UserTier | null {
   const order: UserTier[] = ['standard', 'professional', 'workshop', 'premium']

@@ -27,6 +27,55 @@ interface AuthContext {
   email: string | null
   profileId: string | null
   isAdmin: boolean
+  userType: string | null
+}
+
+// ─── Gating por rol (suscripciones) ───
+// Fabricante = premium | manufacturer (ambos nombres existen en subscription_tiers).
+const OEM_ROLES = new Set(['professional', 'premium', 'manufacturer'])
+const WORKSHOP_ROLES = new Set(['workshop', 'professional', 'premium', 'manufacturer'])
+type RedactCtx = { userType: string | null; isAdmin: boolean }
+const canOEM = (c: RedactCtx) => c.isAdmin || (!!c.userType && OEM_ROLES.has(c.userType))
+const canWS = (c: RedactCtx) => c.isAdmin || (!!c.userType && WORKSHOP_ROLES.has(c.userType))
+
+function redactSchema(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
+  const oem = canOEM(c), ws = canWS(c)
+  if (oem && ws) return row
+  const out: Record<string, unknown> = { ...row }
+  if (!ws) {
+    out.despiece = []
+    out.cost_breakdown = {}
+    out.reference_photos = []
+    out.total_estimated_cost = null
+    out.total_estimated_hours = null
+    out.total_materials_count = null
+    out.related_video_url = null // sección E = Taller+
+  }
+  const comps = row.components
+  if (comps && typeof comps === 'object') {
+    const clean: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(comps as Record<string, Record<string, unknown>>)) {
+      const cc = { ...v }
+      if (!oem) delete cc.oem_ref
+      if (!ws) { delete cc.material_cost; delete cc.total_cost; delete cc.fabrication_hours }
+      clean[k] = cc
+    }
+    out.components = clean
+  }
+  return out
+}
+function redactPart(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
+  if (canOEM(c)) return row
+  return { ...row, oem_ref: null }
+}
+function redactDiagram(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
+  if (canWS(c)) return row
+  return { ...row, total_estimated_cost: null }
+}
+const REDACTORS: Record<string, (r: Record<string, unknown>, c: RedactCtx) => Record<string, unknown>> = {
+  exhaust_schemas: redactSchema,
+  exhaust_parts: redactPart,
+  exhaust_diagrams: redactDiagram,
 }
 
 interface Rule {
@@ -122,7 +171,7 @@ async function getAuth(req: Request, pool: Pool): Promise<AuthContext | null> {
   try {
     const payload = (await verifyToken(header.slice(7), { secretKey: secret })) as { sub: string; email?: string }
     const result = await pool.query(
-      `SELECT id, is_admin FROM public.user_profiles WHERE clerk_user_id = $1 OR (clerk_user_id IS NULL AND email = $2) LIMIT 1`,
+      `SELECT id, is_admin, user_type FROM public.user_profiles WHERE clerk_user_id = $1 OR (clerk_user_id IS NULL AND email = $2) LIMIT 1`,
       [payload.sub, payload.email ?? ''],
     )
     return {
@@ -130,6 +179,7 @@ async function getAuth(req: Request, pool: Pool): Promise<AuthContext | null> {
       email: payload.email ?? null,
       profileId: result.rows[0]?.id ?? null,
       isAdmin: Boolean(result.rows[0]?.is_admin),
+      userType: (result.rows[0]?.user_type as string) ?? null,
     }
   } catch {
     return null
@@ -188,7 +238,11 @@ export async function POST(req: Request): Promise<Response> {
       const limit = body.limit ? ` LIMIT ${Number(body.limit)}` : ''
       const single = body.single || body.maybeSingle
       const q = `SELECT ${buildSelect(body.columns)} FROM ${ident(body.table)}${where}${order}${single ? ' LIMIT 2' : limit}`
-      const rows = (await pool.query(q, values)).rows as Record<string, unknown>[]
+      const rawRows = (await pool.query(q, values)).rows as Record<string, unknown>[]
+      // Gating por rol (suscripciones): recorta campos sensibles según el tier del token.
+      const redactor: ((r: Record<string, unknown>, c: RedactCtx) => Record<string, unknown>) | undefined = REDACTORS[body.table]
+      const ctx: RedactCtx = { userType: auth?.userType ?? null, isAdmin: Boolean(auth?.isAdmin) }
+      const rows = redactor && !ctx.isAdmin ? rawRows.map((r) => redactor(r, ctx)) : rawRows
       if (body.single) {
         if (rows.length === 0) return json({ data: null, error: { message: 'no rows' } }, 404)
         if (rows.length > 1) return json({ data: null, error: { message: 'multiple rows' } }, 406)

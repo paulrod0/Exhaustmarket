@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { Layers, Info, ChevronRight, X, Search, Box, Clock, Euro, Hash, Camera, Play } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
-import { canViewTiers } from '../lib/contentTypes'
+import { canViewTiers, canSeeOem, canSeeWorkshopData } from '../lib/contentTypes'
 import { sortedComponents, emissionsBadgeLabel } from '../lib/schemaDefinitions'
 import SchemaRelatedPanel from '../components/SchemaRelatedPanel'
 import TierBadge from '../components/TierBadge'
@@ -685,6 +685,9 @@ export default function ExhaustSchemasPage() {
 
   const car = schemas.find(s => s.id === selectedCarId) ?? filteredSchemas[0] ?? null
   const component = car && selectedComponent ? car.components[selectedComponent] ?? null : null
+  // Gating por sección (el servidor ya recorta los datos; esto oculta secciones + evita huecos).
+  const canOem = canSeeOem(profile?.user_type, profile?.is_admin)
+  const canWs = canSeeWorkshopData(profile?.user_type, profile?.is_admin)
 
   function handleBrandSelect(brand: string) {
     setSelectedBrand(brand)
@@ -1246,8 +1249,8 @@ export default function ExhaustSchemasPage() {
             </div>
           )}
 
-          {/* Dossier técnico: secciones A, B, C, D, E */}
-          {canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin) && (
+          {/* Dossier técnico: secciones gateadas por rol (A/B/D/E = Taller+, C = Profesional+) */}
+          {(
             <div
               style={{
                 display: 'grid',
@@ -1257,7 +1260,7 @@ export default function ExhaustSchemasPage() {
               }}
             >
               {/* A. Despiece */}
-              {car.despiece && car.despiece.length > 0 && (
+              {canWs && car.despiece && car.despiece.length > 0 && (
                 <DossierSection title="A. Despiece / Material necesario">
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -1299,14 +1302,14 @@ export default function ExhaustSchemasPage() {
               )}
 
               {/* B. Estimación de costes y horas */}
-              {car.cost_breakdown && Object.values(car.cost_breakdown).some((v) => v != null && v !== '') && (
+              {canWs && car.cost_breakdown && Object.values(car.cost_breakdown).some((v) => v != null && v !== '') && (
                 <DossierSection title="B. Estimación de costes y horas">
                   <CostBreakdownPanel breakdown={car.cost_breakdown} accent={car.color} />
                 </DossierSection>
               )}
 
               {/* C. Referencias OEM por componente */}
-              {Object.values(car.components).some((c) => c.oem_ref) && (
+              {canOem && Object.values(car.components).some((c) => c.oem_ref) && (
                 <DossierSection title="C. Referencias OEM por componente">
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     {Object.values(car.components)
@@ -1352,7 +1355,7 @@ export default function ExhaustSchemasPage() {
               )}
 
               {/* D. Fotos técnicas de referencia */}
-              {car.reference_photos && car.reference_photos.length > 0 && (
+              {canWs && car.reference_photos && car.reference_photos.length > 0 && (
                 <DossierSection title="D. Fotos de referencia" icon={<Camera size={14} />}>
                   <div
                     style={{
@@ -1386,8 +1389,8 @@ export default function ExhaustSchemasPage() {
                 </DossierSection>
               )}
 
-              {/* E. Vídeo relacionado */}
-              {car.related_video_url && (
+              {/* E. Vídeo relacionado (Taller+) */}
+              {canWs && car.related_video_url && (
                 <DossierSection title="E. Vídeo de instalación / referencia" icon={<Play size={14} />}>
                   <VideoEmbed url={car.related_video_url} />
                 </DossierSection>
