@@ -619,12 +619,13 @@ const _norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[
 // Reglas de emparejamiento componente → productos (opción C: automático por categoría/nombre).
 const COMP_TO_PROD: { k: string[]; t: string[] }[] = [
   { k: ['silenc', 'muffler', 'catback', 'cat-back', 'trasero', 'resonador'], t: ['silenc', 'muffler', 'catback'] },
-  { k: ['salida', 'tip', 'cola'], t: ['tip'] },
-  { k: ['downpipe', 'bajada', 'front pipe', 'frontpipe'], t: ['downpipe', 'pipe'] },
-  { k: ['colector', 'manifold', 'header'], t: ['manifold', 'flange'] },
-  { k: ['valv', 'valve'], t: ['valve'] },
-  { k: ['flange', 'brida'], t: ['flange'] },
-  { k: ['x-pipe', 'y-pipe', 'xpipe', 'ypipe', 'pipe', 'tubo', 'tramo'], t: ['pipe', 'flexible', 'reducer'] },
+  { k: ['salida', 'tip', 'cola'], t: ['tip', 'salida', 'cola'] },
+  { k: ['downpipe', 'bajada', 'front pipe', 'frontpipe'], t: ['downpipe'] },
+  { k: ['catalizador', 'opf', 'gpf', 'catalytic'], t: ['catal', 'catalytic'] },
+  { k: ['colector', 'manifold', 'header'], t: ['manifold', 'flange', 'colector', 'header'] },
+  { k: ['valv', 'valve'], t: ['valve', 'valv'] },
+  { k: ['flange', 'brida'], t: ['flange', 'brida'] },
+  { k: ['x-pipe', 'y-pipe', 'xpipe', 'ypipe', 'pipe', 'tubo', 'tramo'], t: ['pipe', 'flexible', 'reducer', 'tubo'] },
 ]
 /** Empareja un componente del esquema con productos del marketplace. Si no hay match
  *  específico, cae a sistemas completos (para no dejar el particular sin nada que comprar). */
