@@ -44,6 +44,7 @@ import AdminQAPanelPage from './pages/admin/AdminQAPanelPage'
 import AdminKycReviewPage from './pages/admin/AdminKycReviewPage'
 import CompatibilidadPage from './pages/CompatibilidadPage'
 import MarketplaceBrowsePage from './pages/MarketplaceBrowsePage'
+import WorkshopsMapPage from './pages/WorkshopsMapPage'
 import MarketplaceProductPage from './pages/MarketplaceProductPage'
 import MarketplaceCartPage from './pages/MarketplaceCartPage'
 import MarketplaceOrdersPage from './pages/MarketplaceOrdersPage'
@@ -80,6 +81,7 @@ function App() {
           <Route path="guias" element={<GuidesPage />} />
           <Route path="guias/:slug" element={<GuideDetailPage />} />
           <Route path="payment-result" element={<PaymentResultPage />} />
+          <Route path="talleres" element={<WorkshopsMapPage />} />
           <Route path="compatibilidad" element={<CompatibilidadPage />} />
         </Route>
         <Route path="panel" element={<PanelGuard><PanelLayout /></PanelGuard>}>

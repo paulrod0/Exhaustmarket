@@ -41,6 +41,7 @@ export default function Layout() {
   const navLinks = [
     { to: '/dashboard', label: 'Dashboard' },
     { to: '/marketplace', label: 'Marketplace' },
+    { to: '/talleres', label: 'Talleres' },
     { to: '/esquemas', label: 'Esquemas' },
     { to: '/manuals', label: 'Manuales' },
     { to: '/guias', label: 'Guías' },
