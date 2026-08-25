@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { cart } from '../lib/cart'
 import { useAuthStore } from '../stores/authStore'
 import { auth as authClient } from '../lib/auth-client'
+import { effectivePrice } from '../lib/contentTypes'
 
 interface AnyProduct extends Record<string, any> {
   id: string
@@ -43,11 +44,14 @@ export default function MarketplaceProductPage() {
 
   const handleAddCart = () => {
     if (!item) return
+    const effCart = kind === 'product'
+      ? effectivePrice({ price: item.price, pro_price: item.pro_price }, profile?.user_type, profile?.is_admin)
+      : { price: Number(item.price ?? item.base_price ?? 0) }
     const result = cart.add({
       product_type: kind === 'product' ? 'professional_product' : kind === 'service' ? 'workshop_service' : 'aftermarket_product',
       product_id: item.id,
       product_name: item.product_name ?? item.service_name ?? 'Producto',
-      unit_price: Number(item.price ?? item.base_price ?? 0),
+      unit_price: effCart.price,
       quantity: 1,
       seller_id: item.professional_id ?? item.workshop_id ?? null,
       seller_name: seller?.full_name ?? seller?.company_name ?? null,
@@ -84,7 +88,10 @@ export default function MarketplaceProductPage() {
   if (error || !item) return <div style={{ padding: 40, color: '#D70015' }}>{error || 'Producto no encontrado'}</div>
 
   const title = item.product_name ?? item.service_name ?? 'Producto'
-  const price = Number(item.price ?? item.base_price ?? 0)
+  const eff = kind === 'product'
+    ? effectivePrice({ price: item.price, pro_price: item.pro_price }, profile?.user_type, profile?.is_admin)
+    : { price: Number(item.price ?? item.base_price ?? 0), base: Number(item.price ?? item.base_price ?? 0), isPro: false }
+  const price = eff.price
   const description = item.description ?? ''
   const images: string[] = item.images ?? []
 
@@ -114,8 +121,26 @@ export default function MarketplaceProductPage() {
           {item.brand_name && <p style={{ color: '#86868B', margin: '0 0 12px', fontSize: 14 }}>{item.brand_name}</p>}
           {item.reference && <p style={{ fontFamily: 'monospace', fontSize: 12, color: '#86868B', margin: '0 0 16px' }}>REF: {item.reference}</p>}
 
-          <div style={{ fontSize: 32, fontWeight: 700, margin: '16px 0' }}>
-            {price > 0 ? `${price.toFixed(2)} €` : 'Consultar precio'}
+          <div style={{ margin: '16px 0' }}>
+            {price > 0 ? (
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+                {eff.isPro && (
+                  <span style={{ fontSize: 20, fontWeight: 500, color: '#86868B', textDecoration: 'line-through' }}>
+                    {eff.base.toFixed(2)} €
+                  </span>
+                )}
+                <span style={{ fontSize: 32, fontWeight: 700, color: eff.isPro ? '#0071E3' : undefined }}>
+                  {price.toFixed(2)} €
+                </span>
+                {eff.isPro && (
+                  <span style={{ fontSize: 12, fontWeight: 700, color: '#0071E3', background: '#0071E320', padding: '2px 8px', borderRadius: 6 }}>
+                    Precio Taller
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div style={{ fontSize: 32, fontWeight: 700 }}>Consultar precio</div>
+            )}
           </div>
 
           {item.homologation && (

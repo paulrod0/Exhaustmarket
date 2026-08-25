@@ -103,6 +103,24 @@ export function canSeeWorkshopData(userTier: string | null | undefined, isAdmin 
   return isAdmin || (!!userTier && WORKSHOP_TIERS.includes(userTier))
 }
 
+/**
+ * Precio efectivo a MOSTRAR al comprador (SOLO UX). Taller+ (canSeeWorkshopData) ve el
+ * pro_price fijado por el vendedor; el Particular ve siempre el price normal.
+ * OJO: el precio REAL lo recalcula el servidor en createOrder; esto es solo display.
+ * Debe reflejar la MISMA regla que api/marketplace.ts (canWS ? pro_price : price).
+ */
+export function effectivePrice(
+  product: { price?: number | null; pro_price?: number | null } | null | undefined,
+  userTier: string | null | undefined,
+  isAdmin = false,
+): { price: number; base: number; isPro: boolean } {
+  const base = Number(product?.price ?? 0)
+  const proRaw = product?.pro_price
+  const pro = proRaw == null ? null : Number(proRaw)
+  const proApplies = pro != null && Number.isFinite(pro) && pro > 0 && canSeeWorkshopData(userTier, isAdmin)
+  return proApplies ? { price: pro, base, isPro: true } : { price: base, base, isPro: false }
+}
+
 /** Devuelve el tier "mínimo" razonable al que hay que subir para ver algo */
 export function cheapestTier(allowedTiers: string[]): UserTier | null {
   const order: UserTier[] = ['standard', 'professional', 'workshop', 'premium']

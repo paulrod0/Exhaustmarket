@@ -39,7 +39,7 @@ export async function POST(req: Request): Promise<Response> {
   }
 }
 
-interface AuthCtx { userId: string; profileId: string; isAdmin: boolean; email: string | null }
+interface AuthCtx { userId: string; profileId: string; isAdmin: boolean; email: string | null; userType: string | null }
 
 async function getAuth(req: Request): Promise<AuthCtx | null> {
   const header = req.headers.get('authorization')
@@ -50,7 +50,7 @@ async function getAuth(req: Request): Promise<AuthCtx | null> {
     const payload = (await verifyToken(header.slice(7), { secretKey: secret })) as { sub: string; email?: string }
     const pool = pgPool()
     const r = await pool.query(
-      `SELECT id, is_admin, email FROM public.user_profiles WHERE clerk_user_id = $1 LIMIT 1`,
+      `SELECT id, is_admin, email, user_type FROM public.user_profiles WHERE clerk_user_id = $1 LIMIT 1`,
       [payload.sub],
     )
     if (!r.rows[0]) return null
@@ -59,6 +59,7 @@ async function getAuth(req: Request): Promise<AuthCtx | null> {
       profileId: r.rows[0].id,
       isAdmin: Boolean(r.rows[0].is_admin),
       email: r.rows[0].email ?? payload.email ?? null,
+      userType: (r.rows[0].user_type as string) ?? null,
     }
   } catch { return null }
 }
@@ -107,8 +108,15 @@ async function createOrder(auth: AuthCtx, body: { items?: unknown; shipping_addr
   // Calcular totales
   let subtotal = 0
   const orderItems: Array<{ product_type: string; product_id: string; snapshot: Record<string, unknown>; quantity: number; unit_price: number; line_total: number }> = []
+  // Precio profesional: un comprador Taller+ (canWS) paga pro_price si el producto lo tiene fijado.
+  const WORKSHOP_TIERS = new Set(['workshop', 'professional', 'premium', 'manufacturer'])
+  const buyerIsPro = auth.isAdmin || (!!auth.userType && WORKSHOP_TIERS.has(auth.userType))
   for (const p of productRows) {
-    const unitPrice = Number(p.price ?? p.base_price ?? 0)
+    const stdPrice = Number(p.price ?? p.base_price ?? 0)
+    const proPrice = p.pro_price != null ? Number(p.pro_price) : null
+    const usePro = buyerIsPro && p._product_type === 'professional_product'
+      && proPrice != null && Number.isFinite(proPrice) && proPrice > 0
+    const unitPrice = usePro ? (proPrice as number) : stdPrice
     const qty = Number(p._quantity ?? 1)
     const lineTotal = unitPrice * qty
     subtotal += lineTotal

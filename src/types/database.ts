@@ -174,6 +174,7 @@ export interface Database {
           product_name: string
           description: string
           price: number
+          pro_price: number | null
           stock: number
           category: string
           images: string[]
@@ -190,6 +191,7 @@ export interface Database {
           product_name: string
           description: string
           price: number
+          pro_price?: number | null
           stock?: number
           category?: string
           images?: string[]
@@ -206,6 +208,7 @@ export interface Database {
           product_name?: string
           description?: string
           price?: number
+          pro_price?: number | null
           stock?: number
           category?: string
           images?: string[]

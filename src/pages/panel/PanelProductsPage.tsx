@@ -8,6 +8,7 @@ interface ProductForm {
   product_name: string
   description: string
   price: number
+  pro_price: number | null
   stock: number
   category: string
   images: string[]
@@ -71,6 +72,7 @@ export default function PanelProductsPage() {
     product_name: '',
     description: '',
     price: 0,
+    pro_price: null,
     stock: 0,
     category: '',
     images: [],
@@ -119,6 +121,7 @@ export default function PanelProductsPage() {
         product_name: item.product_name,
         description: item.description,
         price: item.price,
+        pro_price: item.pro_price ?? null,
         stock: item.stock ?? 0,
         category: item.category ?? '',
         images: item.images ?? [],
@@ -340,6 +343,30 @@ export default function PanelProductsPage() {
                       })
                     }
                   />
+                </div>
+              )}
+
+              {/* Precio profesional (solo productos) */}
+              {!isWorkshop && (
+                <div>
+                  <label style={{ display: 'block', marginBottom: '6px', fontSize: '14px', fontWeight: 500, color: '#1D1D1F' }}>
+                    Precio profesional ({'€'}) <span style={{ color: '#86868B', fontWeight: 400 }}>&middot; opcional</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder="Sin precio pro"
+                    className="input-apple"
+                    value={productForm.pro_price ?? ''}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value)
+                      setProductForm({ ...productForm, pro_price: e.target.value === '' || !Number.isFinite(v) ? null : v })
+                    }}
+                  />
+                  <p style={{ marginTop: '6px', fontSize: '12px', color: '#86868B' }}>
+                    Si lo rellenas, los compradores Taller o superior pagaran este precio. Vacio = todos pagan el precio normal.
+                  </p>
                 </div>
               )}
 

@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { Search, ShoppingCart, Filter, Tag } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { cart } from '../lib/cart'
+import { useAuthStore } from '../stores/authStore'
+import { effectivePrice } from '../lib/contentTypes'
 
 interface Product {
   id: string
@@ -10,6 +12,7 @@ interface Product {
   product_name: string
   description: string
   price: number
+  pro_price: number | null
   stock: number | null
   images: string[] | null
   category: string | null
@@ -48,6 +51,7 @@ type ListItem = {
   title: string
   description: string
   price: number
+  pro_price?: number | null
   currency: string
   category: string | null
   badge?: string | null
@@ -63,6 +67,7 @@ export default function MarketplaceBrowsePage() {
   const [items, setItems] = useState<ListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [cartCount, setCartCount] = useState(cart.count())
+  const { profile } = useAuthStore()
 
   useEffect(() => {
     const refresh = () => setCartCount(cart.count())
@@ -86,6 +91,7 @@ export default function MarketplaceBrowsePage() {
           title: p.product_name,
           description: p.description,
           price: Number(p.price),
+          pro_price: p.pro_price ?? null,
           currency: 'EUR',
           category: p.category,
           badge: p.source ? p.source.toUpperCase() : null,
@@ -199,7 +205,11 @@ export default function MarketplaceBrowsePage() {
         <p style={{ color: '#86868B', padding: 40, textAlign: 'center' }}>Sin resultados con esos filtros.</p>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-          {filtered.map((it) => (
+          {filtered.map((it) => {
+            const eff = it.kind === 'product'
+              ? effectivePrice({ price: it.price, pro_price: it.pro_price ?? null }, profile?.user_type, profile?.is_admin)
+              : { price: it.price, base: it.price, isPro: false }
+            return (
             <article key={`${it.kind}-${it.id}`} style={{
               border: '1px solid #E5E5EA', borderRadius: 12, overflow: 'hidden',
               backgroundColor: 'white', display: 'flex', flexDirection: 'column',
@@ -221,14 +231,29 @@ export default function MarketplaceBrowsePage() {
                   {it.description.length > 110 ? it.description.slice(0, 110) + '…' : it.description}
                 </p>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto' }}>
-                  <span style={{ fontSize: 18, fontWeight: 700 }}>
-                    {it.price > 0 ? `${it.price.toFixed(2)} ${it.currency}` : 'Consultar'}
-                  </span>
+                  {eff.price > 0 ? (
+                    <span style={{ fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                      {eff.isPro && (
+                        <span style={{ fontSize: 13, fontWeight: 500, color: '#86868B', textDecoration: 'line-through' }}>
+                          {eff.base.toFixed(2)}
+                        </span>
+                      )}
+                      <span style={{ color: eff.isPro ? '#0071E3' : undefined }}>
+                        {eff.price.toFixed(2)} {it.currency}
+                      </span>
+                      {eff.isPro && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#0071E3', background: '#0071E320', padding: '1px 5px', borderRadius: 4 }}>PRO</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 18, fontWeight: 700 }}>Consultar</span>
+                  )}
                   <Link to={`/marketplace/${it.kind}/${it.id}`} style={detailLink}>Ver →</Link>
                 </div>
               </div>
             </article>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
