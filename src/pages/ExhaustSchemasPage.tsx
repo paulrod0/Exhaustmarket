@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Layers, Info, ChevronRight, X, Search, Box, Clock, Euro, Hash, Camera, Play } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Layers, Info, ChevronRight, X, Search, Box, Clock, Euro, Hash, Camera, Play, ShoppingBag } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import { canViewTiers, canSeeOem, canSeeWorkshopData } from '../lib/contentTypes'
@@ -612,9 +613,45 @@ function GenericDiagram({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
+interface MarketProduct { id: string; product_name: string; price: number | null; images: string[] | null; category: string | null }
+
+const _norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+// Reglas de emparejamiento componente → productos (opción C: automático por categoría/nombre).
+const COMP_TO_PROD: { k: string[]; t: string[] }[] = [
+  { k: ['silenc', 'muffler', 'catback', 'cat-back', 'trasero', 'resonador'], t: ['silenc', 'muffler', 'catback'] },
+  { k: ['salida', 'tip', 'cola'], t: ['tip'] },
+  { k: ['downpipe', 'bajada', 'front pipe', 'frontpipe'], t: ['downpipe', 'pipe'] },
+  { k: ['colector', 'manifold', 'header'], t: ['manifold', 'flange'] },
+  { k: ['valv', 'valve'], t: ['valve'] },
+  { k: ['flange', 'brida'], t: ['flange'] },
+  { k: ['x-pipe', 'y-pipe', 'xpipe', 'ypipe', 'pipe', 'tubo', 'tramo'], t: ['pipe', 'flexible', 'reducer'] },
+]
+/** Empareja un componente del esquema con productos del marketplace. Si no hay match
+ *  específico, cae a sistemas completos (para no dejar el particular sin nada que comprar). */
+function productsForComponent(
+  comp: { id?: string; name?: string } | null,
+  all: MarketProduct[],
+): { list: MarketProduct[]; generic: boolean } {
+  if (!comp) return { list: [], generic: false }
+  const hay = _norm(`${comp.id ?? ''} ${comp.name ?? ''}`)
+  const rule = COMP_TO_PROD.find((r) => r.k.some((k) => hay.includes(k)))
+  const toks = rule?.t ?? []
+  const priced = all.filter((p) => p.price != null)
+  const specific = toks.length
+    ? priced.filter((p) => {
+        const h = _norm(`${p.category ?? ''} ${p.product_name ?? ''}`)
+        return toks.some((t) => h.includes(t))
+      })
+    : []
+  if (specific.length) return { list: specific, generic: false }
+  const systems = priced.filter((p) => _norm(p.category ?? '').includes('system'))
+  return { list: systems, generic: true }
+}
+
 export default function ExhaustSchemasPage() {
   const { user, profile } = useAuthStore()
   const [schemas, setSchemas] = useState<CarSchema[]>([])
+  const [products, setProducts] = useState<MarketProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [selectedBrand, setSelectedBrand] = useState<string>('')
@@ -638,6 +675,15 @@ export default function ExhaustSchemasPage() {
         }
         setLoading(false)
       })
+  }, [])
+
+  // Productos del marketplace para vincular a los componentes (sección "comprar").
+  useEffect(() => {
+    supabase
+      .from('professional_products')
+      .select('id, product_name, price, images, category')
+      .eq('is_active', true)
+      .then(({ data }) => setProducts((data ?? []) as MarketProduct[]))
   }, [])
 
   const q = search.trim().toLowerCase()
@@ -685,6 +731,7 @@ export default function ExhaustSchemasPage() {
 
   const car = schemas.find(s => s.id === selectedCarId) ?? filteredSchemas[0] ?? null
   const component = car && selectedComponent ? car.components[selectedComponent] ?? null : null
+  const componentProducts = useMemo(() => productsForComponent(component, products), [component, products])
   // Gating por sección (el servidor ya recorta los datos; esto oculta secciones + evita huecos).
   const canOem = canSeeOem(profile?.user_type, profile?.is_admin)
   const canWs = canSeeWorkshopData(profile?.user_type, profile?.is_admin)
@@ -1207,6 +1254,46 @@ export default function ExhaustSchemasPage() {
                         Dato técnico
                       </p>
                       <p style={{ fontSize: '12px', color: '#1D1D1F', margin: 0, lineHeight: 1.5 }}>{component.tip}</p>
+                    </div>
+                  )}
+
+                  {componentProducts.list.length > 0 && (
+                    <div style={{ borderTop: '1px solid #F2F2F7', paddingTop: '14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 10px' }}>
+                        <ShoppingBag size={14} style={{ color: car.color }} />
+                        <span style={{ fontSize: '11px', color: '#86868B', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+                          {componentProducts.generic ? 'Sistemas compatibles en el marketplace' : `Comprar: ${component.name}`}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {componentProducts.list.slice(0, 5).map((p) => (
+                          <Link
+                            key={p.id}
+                            to={`/marketplace/product/${p.id}`}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 10, padding: '8px',
+                              borderRadius: 10, border: '1px solid #F2F2F7', textDecoration: 'none',
+                              background: '#FFFFFF', transition: 'border-color .15s ease',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = car.color }}
+                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#F2F2F7' }}
+                          >
+                            <div style={{ width: 44, height: 44, borderRadius: 8, background: '#F5F5F7', flexShrink: 0, overflow: 'hidden' }}>
+                              {Array.isArray(p.images) && p.images[0] && (
+                                <img src={p.images[0]} alt={p.product_name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
+                              )}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: '#1D1D1F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.product_name}</div>
+                              {p.price != null && <div style={{ fontSize: 12, color: car.color, fontWeight: 700 }}>{p.price} €</div>}
+                            </div>
+                            <ChevronRight size={15} style={{ color: '#C7C7CC', flexShrink: 0 }} />
+                          </Link>
+                        ))}
+                      </div>
+                      <Link to="/marketplace" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 10, fontSize: 12, fontWeight: 600, color: car.color, textDecoration: 'none' }}>
+                        Ver todo el marketplace <ChevronRight size={13} />
+                      </Link>
                     </div>
                   )}
 
