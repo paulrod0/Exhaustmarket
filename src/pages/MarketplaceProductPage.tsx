@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, ShoppingCart, MessageSquare } from 'lucide-react'
+import { ArrowLeft, ShoppingCart, MessageSquare, FileText } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { cart } from '../lib/cart'
 import { useAuthStore } from '../stores/authStore'
@@ -132,10 +132,18 @@ export default function MarketplaceProductPage() {
             </p>
           )}
 
-          <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
             <button onClick={handleAddCart} style={primaryBtn}>
               <ShoppingCart size={16} /> Añadir al carrito
             </button>
+            {(item.professional_id || item.workshop_id) && (
+              <button
+                onClick={() => navigate(`/quotes?taller=${item.professional_id ?? item.workshop_id}`)}
+                style={secondaryBtn}
+              >
+                <FileText size={16} /> Solicitar presupuesto
+              </button>
+            )}
             {item.url && (
               <a href={item.url} target="_blank" rel="noreferrer" style={secondaryBtn}>
                 Web del vendedor →

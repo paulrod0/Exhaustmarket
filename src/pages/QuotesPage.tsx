@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { useQuoteStore } from '../stores/quoteStore'
 import { FileText, Plus, CheckCircle, XCircle, Send, MessageSquare } from 'lucide-react'
@@ -15,6 +16,13 @@ export default function QuotesPage() {
 
   const [view, setView] = useState<'sent' | 'received'>('sent')
   const [showNewRequestForm, setShowNewRequestForm] = useState(false)
+  const [searchParams] = useSearchParams()
+  const presetWorkshopId = searchParams.get('taller') ?? ''
+
+  // Llegada desde "Solicitar presupuesto" de una ficha: abre el formulario ya apuntando al vendedor.
+  useEffect(() => {
+    if (presetWorkshopId) setShowNewRequestForm(true)
+  }, [presetWorkshopId])
 
   useEffect(() => {
     if (user) {
@@ -103,6 +111,7 @@ export default function QuotesPage() {
         >
           <div style={{ width: '100%', maxWidth: 560, margin: '0 22px' }}>
             <NewQuoteRequestForm
+              presetWorkshopId={presetWorkshopId}
               onClose={() => setShowNewRequestForm(false)}
               onSuccess={() => {
                 setShowNewRequestForm(false)
@@ -439,9 +448,9 @@ function QuoteRequestCard({ request, quotes, isSender }: { request: any; quotes:
   )
 }
 
-function NewQuoteRequestForm({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
+function NewQuoteRequestForm({ onClose, onSuccess, presetWorkshopId }: { onClose: () => void; onSuccess: () => void; presetWorkshopId?: string }) {
   const { workshops, fetchWorkshops, createQuoteRequest, loading: storeLoading } = useQuoteStore()
-  const [targetWorkshopId, setTargetWorkshopId] = useState('')
+  const [targetWorkshopId, setTargetWorkshopId] = useState(presetWorkshopId ?? '')
   const [carModel, setCarModel] = useState('')
   const [carYear, setCarYear] = useState(new Date().getFullYear())
   const [serviceType, setServiceType] = useState('')
