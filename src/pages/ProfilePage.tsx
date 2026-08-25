@@ -9,6 +9,7 @@ export default function ProfilePage() {
   const [phone, setPhone] = useState(profile?.phone || '')
   const [companyName, setCompanyName] = useState(profile?.company_name || '')
   const [taxId, setTaxId] = useState(profile?.tax_id || '')
+  const [address, setAddress] = useState(profile?.address || '')
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
@@ -38,12 +39,33 @@ export default function ProfilePage() {
     setSuccess('')
 
     try {
-      await updateProfile({
+      const patch: Parameters<typeof updateProfile>[0] = {
         full_name: fullName,
         phone: phone || null,
         company_name: companyName || null,
         tax_id: taxId || null,
-      })
+      }
+      const isSeller = profile.user_type === 'professional' || profile.user_type === 'workshop'
+      if (isSeller) {
+        patch.address = address || null
+        // Geocodificar la direccion para el mapa de talleres (best-effort: guarda igual si falla).
+        if (address.trim().length >= 3) {
+          try {
+            const res = await fetch(`/api/geocode?q=${encodeURIComponent(address.trim())}`)
+            if (res.ok) {
+              const g = (await res.json()) as { lat?: number; lon?: number }
+              if (typeof g.lat === 'number' && typeof g.lon === 'number') {
+                patch.latitude = g.lat
+                patch.longitude = g.lon
+              }
+            }
+          } catch { /* geocode best-effort */ }
+        } else {
+          patch.latitude = null
+          patch.longitude = null
+        }
+      }
+      await updateProfile(patch)
       setSuccess('Perfil actualizado correctamente')
       setEditing(false)
     } catch (err) {
@@ -181,6 +203,19 @@ export default function ProfilePage() {
                       className="input-apple"
                     />
                   </div>
+
+                  <div>
+                    <label style={{ fontSize: 14, fontWeight: 500, color: '#1D1D1F', marginBottom: 8, display: 'block' }}>
+                      Direccion <span style={{ color: '#86868B', fontWeight: 400 }}>&middot; para aparecer en el mapa de talleres</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={address}
+                      onChange={(e) => setAddress(e.target.value)}
+                      placeholder="Calle, numero, ciudad"
+                      className="input-apple"
+                    />
+                  </div>
                 </>
               )}
 
@@ -201,6 +236,7 @@ export default function ProfilePage() {
                     setPhone(profile.phone || '')
                     setCompanyName(profile.company_name || '')
                     setTaxId(profile.tax_id || '')
+                    setAddress(profile.address || '')
                   }}
                   className="btn-pill btn-secondary"
                 >
@@ -240,6 +276,7 @@ export default function ProfilePage() {
                 <>
                   <InfoRow label="Empresa" value={profile.company_name || 'No especificada'} />
                   <InfoRow label="NIF/CIF" value={profile.tax_id || 'No especificado'} />
+                  <InfoRow label="Direccion" value={profile.address || 'No especificada'} />
                 </>
               )}
               <InfoRow

@@ -30,6 +30,9 @@ export interface Database {
           phone: string | null
           company_name: string | null
           tax_id: string | null
+          address: string | null
+          latitude: number | null
+          longitude: number | null
           is_verified: boolean
           is_admin: boolean
           created_at: string
@@ -43,6 +46,9 @@ export interface Database {
           phone?: string | null
           company_name?: string | null
           tax_id?: string | null
+          address?: string | null
+          latitude?: number | null
+          longitude?: number | null
           is_verified?: boolean
           is_admin?: boolean
           created_at?: string
@@ -56,6 +62,9 @@ export interface Database {
           phone?: string | null
           company_name?: string | null
           tax_id?: string | null
+          address?: string | null
+          latitude?: number | null
+          longitude?: number | null
           is_verified?: boolean
           is_admin?: boolean
           created_at?: string
