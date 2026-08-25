@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Thermometer, Layers, Info, ChevronRight, X, Search, Box, Clock, Euro, Hash, Camera, Play } from 'lucide-react'
+import { Layers, Info, ChevronRight, X, Search, Box, Clock, Euro, Hash, Camera, Play } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
 import { canViewTiers } from '../lib/contentTypes'
-import { sortedComponents } from '../lib/schemaDefinitions'
+import { sortedComponents, emissionsBadgeLabel } from '../lib/schemaDefinitions'
 import SchemaRelatedPanel from '../components/SchemaRelatedPanel'
 import TierBadge from '../components/TierBadge'
 import UpgradeCallout from '../components/UpgradeCallout'
@@ -26,6 +26,7 @@ interface Component {
   total_cost?: number
   difficulty?: 'baja' | 'media' | 'alta'
   fabricable?: boolean
+  image_url?: string
 }
 
 type Layout = 'v8tt' | 'v10na' | 'flat6na' | 'i6tt' | 'v12na' | 'flat6tt' | 'v8na'
@@ -53,6 +54,7 @@ interface CarSchema {
   year: string
   engine: string
   power: string
+  emissions?: string | null
   layout: Layout
   color: string
   note?: string | null
@@ -572,29 +574,33 @@ function GenericDiagram({
     return <div style={{ color: '#86868B', fontSize: 13, padding: '20px 8px' }}>Este modelo no tiene componentes cargados todavía.</div>
   }
   return (
-    <div style={{ overflowX: 'auto', padding: '4px 2px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 0, minWidth: 'min-content' }}>
-        {/* motor */}
-        <div style={{ flexShrink: 0, width: 26, height: 56, borderRadius: 6, backgroundColor: '#E5E5EA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize: 9, color: '#86868B', transform: 'rotate(-90deg)', whiteSpace: 'nowrap' }}>motor</span>
+    <div style={{ padding: '4px 2px', display: 'flex', justifyContent: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+        {/* motor (arriba) */}
+        <div style={{
+          flexShrink: 0, width: 130, height: 30, borderRadius: 8, backgroundColor: '#E5E5EA',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <span style={{ fontSize: 10, color: '#86868B', letterSpacing: '0.08em' }}>MOTOR</span>
         </div>
         {list.map((c) => {
           const isSel = c.id === selected
           return (
-            <div key={c.id} style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>
-              <div style={{ width: 22, height: 2, backgroundColor: '#D2D2D7' }} />
+            <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+              {/* conector vertical (flujo de gases descendente) */}
+              <div style={{ width: 2, height: 18, backgroundColor: '#D2D2D7' }} />
               <button
                 onClick={() => onSelect(c.id)}
                 title={c.name}
                 style={{
-                  minWidth: 92, maxWidth: 150, padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+                  width: 230, maxWidth: '100%', padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
                   border: `2px solid ${isSel ? color : '#E5E5EA'}`,
                   backgroundColor: isSel ? `${color}12` : '#FFFFFF',
                   color: '#1D1D1F', textAlign: 'center', transition: 'all .15s ease',
                 }}
               >
-                <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</div>
-                {c.material && <div style={{ fontSize: 10, color: '#86868B', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.material}</div>}
+                <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>{c.name}</div>
+                {c.material && <div style={{ fontSize: 10, color: '#86868B', marginTop: 2 }}>{c.material}</div>}
               </button>
             </div>
           )
@@ -611,7 +617,7 @@ export default function ExhaustSchemasPage() {
   const [schemas, setSchemas] = useState<CarSchema[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [selectedBrand, setSelectedBrand] = useState<string>('Todos')
+  const [selectedBrand, setSelectedBrand] = useState<string>('')
   const [selectedCarId, setSelectedCarId] = useState<string | null>(null)
   const [selectedComponent, setSelectedComponent] = useState<string | null>(null)
 
@@ -634,21 +640,48 @@ export default function ExhaustSchemasPage() {
       })
   }, [])
 
-  const brands = useMemo(() => ['Todos', ...Array.from(new Set(schemas.map(s => s.brand)))], [schemas])
+  const q = search.trim().toLowerCase()
+  const matches = (s: CarSchema) =>
+    !q ||
+    s.brand.toLowerCase().includes(q) ||
+    s.model.toLowerCase().includes(q) ||
+    (s.engine ?? '').toLowerCase().includes(q)
 
-  const filteredSchemas = useMemo(() => {
-    let list = schemas
-    if (selectedBrand !== 'Todos') list = list.filter(s => s.brand === selectedBrand)
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter(s =>
-        s.brand.toLowerCase().includes(q) ||
-        s.model.toLowerCase().includes(q) ||
-        s.engine.toLowerCase().includes(q)
-      )
+  // Marcas únicas, orden alfabético
+  const brands = useMemo(
+    () => Array.from(new Set(schemas.map(s => s.brand))).sort((a, b) => a.localeCompare(b)),
+    [schemas],
+  )
+  // Marcas visibles en el rail (si hay búsqueda, solo las que tienen coincidencias)
+  const visibleBrands = useMemo(
+    () => brands.filter(b => schemas.some(s => s.brand === b && matches(s))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [brands, schemas, q],
+  )
+  // Modelo → motorizaciones para la marca activa
+  const modelGroups = useMemo(() => {
+    const rows = schemas.filter(s => s.brand === selectedBrand && matches(s))
+    const map = new Map<string, CarSchema[]>()
+    for (const s of rows) { const arr = map.get(s.model) ?? []; arr.push(s); map.set(s.model, arr) }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([model, rs]) => ({ model, rows: rs.sort((x, y) => (x.engine ?? '').localeCompare(y.engine ?? '')) }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schemas, selectedBrand, q])
+
+  const filteredSchemas = useMemo(
+    () => schemas.filter(s => s.brand === selectedBrand && matches(s)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [schemas, selectedBrand, q],
+  )
+
+  // Si se busca algo de otra marca, saltar a la 1ª marca con resultados
+  useEffect(() => {
+    if (q && visibleBrands.length > 0 && !visibleBrands.includes(selectedBrand)) {
+      setSelectedBrand(visibleBrands[0])
+      setSelectedComponent(null)
     }
-    return list
-  }, [schemas, selectedBrand, search])
+  }, [q, visibleBrands, selectedBrand])
 
   const car = schemas.find(s => s.id === selectedCarId) ?? filteredSchemas[0] ?? null
   const component = car && selectedComponent ? car.components[selectedComponent] ?? null : null
@@ -656,7 +689,7 @@ export default function ExhaustSchemasPage() {
   function handleBrandSelect(brand: string) {
     setSelectedBrand(brand)
     setSelectedComponent(null)
-    const first = schemas.find(s => brand === 'Todos' || s.brand === brand)
+    const first = schemas.find(s => s.brand === brand)
     if (first) setSelectedCarId(first.id)
   }
 
@@ -693,7 +726,7 @@ export default function ExhaustSchemasPage() {
           type="text"
           placeholder="Buscar por marca, modelo o motor…"
           value={search}
-          onChange={e => { setSearch(e.target.value); setSelectedBrand('Todos') }}
+          onChange={e => setSearch(e.target.value)}
           style={{
             width: '100%',
             boxSizing: 'border-box',
@@ -708,59 +741,78 @@ export default function ExhaustSchemasPage() {
         />
       </div>
 
-      {/* Brand selector */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '16px' }}>
-        {brands.map(brand => (
-          <button
-            key={brand}
-            onClick={() => handleBrandSelect(brand)}
-            style={{
-              padding: '7px 18px',
-              borderRadius: '980px',
-              fontSize: '13px',
-              fontWeight: 500,
-              border: 'none',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-              backgroundColor: selectedBrand === brand ? '#1D1D1F' : '#F5F5F7',
-              color: selectedBrand === brand ? '#FFFFFF' : '#1D1D1F',
-            }}
-          >
-            {brand}
-          </button>
-        ))}
-      </div>
+      {/* Selector marca → modelo → motorización (listas verticales, escala a cientos) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(150px, 220px) 1fr', gap: 12, maxWidth: 900, margin: '0 auto 24px', alignItems: 'start' }}>
+        {/* Col 1 — Marcas */}
+        <div style={railBox}>
+          <p style={railHeading}>Marcas</p>
+          {visibleBrands.map(brand => {
+            const active = brand === selectedBrand
+            const count = schemas.filter(s => s.brand === brand).length
+            return (
+              <button key={brand} onClick={() => handleBrandSelect(brand)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  width: '100%', padding: '9px 12px', borderRadius: 9, border: 'none',
+                  cursor: 'pointer', textAlign: 'left', marginBottom: 2,
+                  backgroundColor: active ? '#1D1D1F' : 'transparent',
+                  color: active ? '#FFFFFF' : '#1D1D1F', transition: 'background .15s ease',
+                }}
+                onMouseEnter={e => { if (!active) e.currentTarget.style.backgroundColor = '#F5F5F7' }}
+                onMouseLeave={e => { if (!active) e.currentTarget.style.backgroundColor = 'transparent' }}>
+                <span style={{ fontSize: 13, fontWeight: active ? 600 : 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{brand}</span>
+                <span style={{ fontSize: 11, color: active ? 'rgba(255,255,255,.6)' : '#C7C7CC', flexShrink: 0 }}>{count}</span>
+              </button>
+            )
+          })}
+          {visibleBrands.length === 0 && (
+            <p style={{ fontSize: 12, color: '#86868B', padding: '10px 12px' }}>Sin resultados</p>
+          )}
+        </div>
 
-      {/* Model selector */}
-      {filteredSchemas.length > 0 && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', flexWrap: 'wrap', marginBottom: '24px' }}>
-          {filteredSchemas.map(c => (
-            <button
-              key={c.id}
-              onClick={() => handleCarSelect(c.id)}
-              style={{
-                padding: '5px 14px',
-                borderRadius: '980px',
-                fontSize: '12px',
-                fontWeight: 400,
-                border: `1px solid ${selectedCarId === c.id ? c.color : '#D2D2D7'}`,
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-                backgroundColor: selectedCarId === c.id ? c.color : '#FFFFFF',
-                color: selectedCarId === c.id ? '#FFFFFF' : '#1D1D1F',
-              }}
-            >
-              {selectedBrand === 'Todos' ? `${c.brand} ${c.model}` : c.model}
-            </button>
+        {/* Col 2 — Modelos → motorizaciones (vertical, agrupado, seguido) */}
+        <div style={railBox}>
+          <p style={railHeading}>{selectedBrand || '—'} · modelos</p>
+          {modelGroups.map(group => (
+            <div key={group.model} style={{ marginBottom: 6 }}>
+              <div style={{ position: 'sticky', top: 0, backgroundColor: '#FFFFFF', padding: '6px 12px 4px', zIndex: 1 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#1D1D1F', letterSpacing: '-0.01em' }}>{group.model}</span>
+                <span style={{ fontSize: 11, color: '#C7C7CC', marginLeft: 6 }}>{group.rows.length} motoriz.</span>
+              </div>
+              {group.rows.map(row => {
+                const active = row.id === selectedCarId
+                return (
+                  <button key={row.id} onClick={() => handleCarSelect(row.id)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                      width: '100%', padding: '8px 12px', borderRadius: 9, marginBottom: 2, cursor: 'pointer',
+                      textAlign: 'left', border: `1px solid ${active ? row.color : 'transparent'}`,
+                      backgroundColor: active ? `${row.color}12` : 'transparent', transition: 'all .15s ease',
+                    }}
+                    onMouseEnter={e => { if (!active) e.currentTarget.style.backgroundColor = '#F5F5F7' }}
+                    onMouseLeave={e => { if (!active) e.currentTarget.style.backgroundColor = 'transparent' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 3, backgroundColor: row.color, flexShrink: 0 }} />
+                      <span style={{ minWidth: 0 }}>
+                        <span style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#1D1D1F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {row.engine || 'Motorización'}
+                        </span>
+                        <span style={{ display: 'block', fontSize: 11, color: '#86868B' }}>
+                          {row.power}{row.year ? ` · ${row.year}` : ''}
+                        </span>
+                      </span>
+                    </span>
+                    <ChevronRight size={14} style={{ color: active ? row.color : '#C7C7CC', flexShrink: 0 }} />
+                  </button>
+                )
+              })}
+            </div>
           ))}
+          {modelGroups.length === 0 && (
+            <p style={{ fontSize: 12, color: '#86868B', padding: '10px 12px' }}>No hay modelos para esta marca.</p>
+          )}
         </div>
-      )}
-
-      {filteredSchemas.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '40px', color: '#86868B' }}>
-          No se encontraron modelos para esa búsqueda.
-        </div>
-      )}
+      </div>
 
       {car && (
         <>
@@ -850,6 +902,18 @@ export default function ExhaustSchemasPage() {
                       <p style={dossierMetaLabel}>Potencia</p>
                       <p style={dossierMetaValue}>{car.power}</p>
                     </div>
+                    {emissionsBadgeLabel(car.emissions) && (
+                      <div>
+                        <p style={dossierMetaLabel}>Normativa</p>
+                        <span style={{
+                          display: 'inline-block', marginTop: 2, padding: '2px 9px', borderRadius: 6,
+                          backgroundColor: `${car.color}14`, color: car.color, fontSize: 13, fontWeight: 600,
+                          border: `1px solid ${car.color}30`, lineHeight: 1.4,
+                        }}>
+                          {emissionsBadgeLabel(car.emissions)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1039,7 +1103,12 @@ export default function ExhaustSchemasPage() {
                 </div>
 
                 <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {/* Header con badge fabricable */}
+                  {component.image_url && (
+                    <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid #F2F2F7', aspectRatio: '4 / 3', backgroundColor: '#F5F5F7' }}>
+                      <img src={component.image_url} alt={component.name}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
+                    </div>
+                  )}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                     <span
                       style={{
@@ -1052,20 +1121,6 @@ export default function ExhaustSchemasPage() {
                     >
                       Ficha técnica
                     </span>
-                    {component.fabricable && (
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 600,
-                          backgroundColor: '#D1F7D1',
-                          color: '#1A8C1A',
-                          padding: '3px 8px',
-                          borderRadius: 980,
-                        }}
-                      >
-                        Fabricable
-                      </span>
-                    )}
                   </div>
 
                   {/* Filas tipo "ficha de producto" */}
@@ -1111,11 +1166,6 @@ export default function ExhaustSchemasPage() {
                         value={`${component.material_cost} €`}
                       />
                     )}
-                    <FichaRow
-                      icon={<Thermometer size={13} style={{ color: '#FF3B30' }} />}
-                      label="Temperatura"
-                      value={component.temp || '—'}
-                    />
                     {component.total_cost != null && (
                       <div
                         style={{
@@ -1132,37 +1182,6 @@ export default function ExhaustSchemasPage() {
                           {component.total_cost} €
                         </span>
                       </div>
-                    )}
-                    {component.difficulty && (
-                      <FichaRow
-                        icon={null}
-                        label="Dificultad"
-                        valueEl={
-                          <span
-                            style={{
-                              fontSize: 11,
-                              fontWeight: 600,
-                              padding: '3px 9px',
-                              borderRadius: 980,
-                              backgroundColor:
-                                component.difficulty === 'baja'
-                                  ? '#D1F7D1'
-                                  : component.difficulty === 'media'
-                                    ? '#FFF7E5'
-                                    : '#FFE5E7',
-                              color:
-                                component.difficulty === 'baja'
-                                  ? '#1A8C1A'
-                                  : component.difficulty === 'media'
-                                    ? '#B25400'
-                                    : '#D70015',
-                              textTransform: 'capitalize',
-                            }}
-                          >
-                            {component.difficulty}
-                          </span>
-                        }
-                      />
                     )}
                   </div>
 
@@ -1397,6 +1416,15 @@ const dossierMetaLabel: React.CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: '0.05em',
   margin: 0,
+}
+
+const railBox: React.CSSProperties = {
+  border: '1px solid #F2F2F7', borderRadius: 14, backgroundColor: '#FFFFFF',
+  maxHeight: 440, overflowY: 'auto', padding: 6,
+}
+const railHeading: React.CSSProperties = {
+  fontSize: 10, fontWeight: 600, color: '#86868B', textTransform: 'uppercase',
+  letterSpacing: '0.06em', padding: '6px 12px 8px', margin: 0,
 }
 
 const dossierMetaValue: React.CSSProperties = {

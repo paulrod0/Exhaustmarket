@@ -61,15 +61,12 @@ export default function ImagePicker({
     }
   }
 
-  async function handleRemove() {
+  function handleRemove() {
     if (!value) return
-    if (!window.confirm('¿Eliminar esta imagen?')) return
-    try {
-      await deleteContentMedia(value)
-    } catch (err) {
-      console.error('No se pudo borrar la imagen del bucket:', err)
-    }
+    // Sin window.confirm (bloqueante) ni await: UI instantánea + borrado en 2º plano.
+    const prev = value
     onChange(null)
+    void deleteContentMedia(prev).catch((err) => console.error('No se pudo borrar la imagen del bucket:', err))
   }
 
   return (

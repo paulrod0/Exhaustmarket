@@ -54,15 +54,12 @@ export default function FilePicker({
     }
   }
 
-  async function handleRemove() {
+  function handleRemove() {
     if (!value) return
-    if (!window.confirm('¿Eliminar este archivo?')) return
-    try {
-      await deleteTutorialFile(value)
-    } catch (err) {
-      console.error(err)
-    }
+    // Sin window.confirm (bloqueante) ni await: UI instantánea + borrado en 2º plano.
+    const prev = value
     onChange(null, null)
+    void deleteTutorialFile(prev).catch((err) => console.error(err))
   }
 
   const ext = value ? value.split('.').pop()?.toLowerCase() ?? '' : ''

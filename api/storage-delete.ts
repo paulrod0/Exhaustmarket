@@ -17,8 +17,10 @@ export async function POST(req: Request): Promise<Response> {
     }
 
     const { publicUrl } = (await req.json()) as { publicUrl: string }
-    if (!publicUrl.startsWith(PUBLIC_BASE_URL)) return json({ error: 'unsupported URL' }, 400)
-    const key = publicUrl.slice(PUBLIC_BASE_URL.length).replace(/^\/+/, '')
+    // Deriva el key del pathname (funciona con el host viejo r2.dev, el dominio
+    // propio nuevo, o cualquier host futuro; el key bucket/prefix/... es el mismo).
+    let key: string
+    try { key = new URL(publicUrl).pathname.replace(/^\/+/, '') } catch { return json({ error: 'bad url' }, 400) }
     if (!key) return json({ error: 'no key' }, 400)
 
     const s3 = new S3Client({

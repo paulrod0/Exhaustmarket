@@ -70,23 +70,19 @@ export default function PhotoUploader({
     handleFiles(e.target.files)
   }
 
-  async function removePhoto(url: string) {
+  function removePhoto(url: string) {
     if (disabled) return
-    const confirmed = window.confirm('¿Eliminar esta foto permanentemente?')
-    if (!confirmed) return
-    try {
-      await deleteExhaustPhoto(url)
-    } catch (e) {
-      // No bloqueamos la UI si la eliminación del storage falla (el registro ya se actualiza)
-      console.error('No se pudo borrar la foto del bucket:', e)
-    }
+    // Igual que "Hacer portada": mutación SÍNCRONA e instantánea de la UI.
+    // Antes usaba window.confirm() (modal bloqueante del hilo — se colgaba minutos
+    // en navegador automatizado) + await del borrado en R2. Ahora el borrado en R2
+    // va en 2º plano (fire-and-forget) y no bloquea nada.
     const newCover = coverUrl === url ? (galleryUrls[0] ?? null) : coverUrl
     const newGallery = galleryUrls.filter((u) => u !== url)
-    // Si al eliminar el cover promocionamos la primera de galería, la sacamos de ahí también
     if (coverUrl === url && galleryUrls[0]) {
       newGallery.shift()
     }
     onChange({ coverUrl: newCover, galleryUrls: newGallery })
+    void deleteExhaustPhoto(url).catch((e) => console.error('No se pudo borrar la foto del bucket:', e))
   }
 
   function promoteToCover(url: string) {

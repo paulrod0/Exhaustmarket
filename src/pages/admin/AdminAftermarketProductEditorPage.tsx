@@ -27,7 +27,14 @@ interface Product {
 }
 
 interface BrandOpt { id: string; name: string }
-interface PartOpt { id: string; label: string }
+interface PartOpt {
+  id: string
+  name: string
+  partType: string
+  oemRef: string | null
+  vehicle: string   // "Alfa Romeo Giulia · 2.9 V6" ('' si no resuelve)
+  search: string    // haystack en minúsculas: name + oem_ref + vehículo + tipo
+}
 
 export default function AdminAftermarketProductEditorPage() {
   const { id } = useParams<{ id: string }>()
@@ -49,8 +56,47 @@ export default function AdminAftermarketProductEditorPage() {
       const { data: b } = await supabase.from('aftermarket_brands').select('*').order('name').limit(200)
       setBrands(((b as { id: string; name: string }[]) ?? []).map((x) => ({ id: x.id, name: x.name })))
 
-      const { data: ps } = await supabase.from('exhaust_parts').select('*').limit(500)
-      setParts(((ps as { id: string; name: string; part_type: string }[]) ?? []).map(p => ({ id: p.id, label: `${p.part_type} · ${p.name}` })))
+      // Piezas OEM + contexto de vehículo. El facade NO hace joins anidados:
+      // 3 queries separadas + Maps (patrón joinRelated).
+      const { data: ps } = await supabase
+        .from('exhaust_parts')
+        .select('id, name, part_type, oem_ref, diagram_id')
+        .order('part_type')
+        .limit(5000)
+      const partRows = (ps as { id: string; name: string; part_type: string; oem_ref: string | null; diagram_id: string }[]) ?? []
+
+      const diagramIds = [...new Set(partRows.map(p => p.diagram_id).filter(Boolean))]
+      const { data: ds } = diagramIds.length
+        ? await supabase.from('exhaust_diagrams').select('id, engine_id').in('id', diagramIds)
+        : { data: [] }
+      const dMap = new Map(((ds as { id: string; engine_id: string }[]) ?? []).map(d => [d.id, d]))
+
+      const engineIds = [...new Set(((ds as { engine_id: string }[]) ?? []).map(d => d.engine_id).filter(Boolean))]
+      const { data: es } = engineIds.length
+        ? await supabase.from('engines').select('id, vehicle_id, version').in('id', engineIds)
+        : { data: [] }
+      const eMap = new Map(((es as { id: string; vehicle_id: string; version: string }[]) ?? []).map(e => [e.id, e]))
+
+      const vehicleIds = [...new Set(((es as { vehicle_id: string }[]) ?? []).map(e => e.vehicle_id).filter(Boolean))]
+      const { data: vs } = vehicleIds.length
+        ? await supabase.from('vehicles').select('id, brand, model').in('id', vehicleIds)
+        : { data: [] }
+      const vMap = new Map(((vs as { id: string; brand: string; model: string }[]) ?? []).map(v => [v.id, v]))
+
+      setParts(partRows.map(p => {
+        const d = dMap.get(p.diagram_id)
+        const e = d ? eMap.get(d.engine_id) : null
+        const v = e ? vMap.get(e.vehicle_id) : null
+        const vehicle = v ? `${v.brand} ${v.model}${e?.version ? ` · ${e.version}` : ''}` : ''
+        return {
+          id: p.id,
+          name: p.name,
+          partType: p.part_type,
+          oemRef: p.oem_ref,
+          vehicle,
+          search: [p.name, p.oem_ref ?? '', vehicle, p.part_type].join(' ').toLowerCase(),
+        }
+      }))
 
       if (!isNew) {
         const { data } = await supabase.from('exhaust_aftermarket_products').select('*').eq('id', id).maybeSingle()
@@ -230,13 +276,24 @@ function Field({ label, value, onChange, placeholder, type = 'text', step, optio
 }
 
 function MultiSelect({ options, selected, onChange }: {
-  options: { id: string; label: string }[];
+  options: PartOpt[];
   selected: string[];
   onChange: (vs: string[]) => void;
 }) {
   const [search, setSearch] = useState('')
-  const filtered = options.filter(o => !search.trim() || o.label.toLowerCase().includes(search.toLowerCase()))
+  const [vehicleFilter, setVehicleFilter] = useState('')
+
+  const vehicles = [...new Set(options.map(o => o.vehicle).filter(Boolean))].sort()
+  const q = search.trim().toLowerCase()
+  const matches = options.filter(o => {
+    if (vehicleFilter && o.vehicle !== vehicleFilter) return false
+    if (!q) return !!vehicleFilter // con filtro de vehículo lista todas; sin nada, no sugiere
+    return o.search.includes(q) // busca por nombre + oem_ref + vehículo + tipo
+  })
+  const MAX = 50
+  const shown = matches.slice(0, MAX)
   const selectedItems = options.filter(o => selected.includes(o.id))
+  const partLabel = (o: PartOpt) => `${o.partType} · ${o.name}`
 
   return (
     <div>
@@ -244,11 +301,13 @@ function MultiSelect({ options, selected, onChange }: {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
           {selectedItems.map(s => (
             <span key={s.id} style={{
-              display: 'inline-flex', alignItems: 'center', gap: 4,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
               padding: '4px 10px', backgroundColor: '#0071E3', color: 'white',
               borderRadius: 12, fontSize: 12,
             }}>
-              {s.label}
+              <span>{partLabel(s)}</span>
+              {s.oemRef && <span style={{ opacity: 0.85, fontFamily: 'monospace' }}>{s.oemRef}</span>}
+              {s.vehicle && <span style={{ opacity: 0.7 }}>· {s.vehicle}</span>}
               <button onClick={() => onChange(selected.filter(x => x !== s.id))}
                 style={{ background: 'none', border: 'none', color: 'white', cursor: 'pointer', padding: 0, marginLeft: 2 }}>
                 ×
@@ -257,25 +316,51 @@ function MultiSelect({ options, selected, onChange }: {
           ))}
         </div>
       )}
-      <input type="text" placeholder="Buscar pieza para añadir…" value={search}
-        onChange={(e) => setSearch(e.target.value)} style={inputStyle} />
-      {search.trim() && (
-        <div style={{ marginTop: 8, maxHeight: 200, overflowY: 'auto', border: '1px solid #E5E5EA', borderRadius: 8 }}>
-          {filtered.slice(0, 30).map(o => (
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        {vehicles.length > 1 && (
+          <select value={vehicleFilter} onChange={(e) => setVehicleFilter(e.target.value)}
+            style={{ ...(inputStyle as React.CSSProperties), maxWidth: 280 }}>
+            <option value="">Todos los vehículos</option>
+            {vehicles.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        )}
+        <input type="text" placeholder="Buscar por nombre, referencia OEM o vehículo…" value={search}
+          onChange={(e) => setSearch(e.target.value)} style={{ ...(inputStyle as React.CSSProperties), flex: 1 }} />
+      </div>
+
+      {(q || vehicleFilter) && (
+        <div style={{ marginTop: 8, maxHeight: 280, overflowY: 'auto', border: '1px solid #E5E5EA', borderRadius: 8 }}>
+          {shown.length === 0 && (
+            <div style={{ padding: '10px 12px', fontSize: 13, color: '#86868B' }}>Sin coincidencias.</div>
+          )}
+          {shown.map(o => (
             <button key={o.id}
               onClick={() => {
                 if (!selected.includes(o.id)) onChange([...selected, o.id])
                 setSearch('')
               }}
+              disabled={selected.includes(o.id)}
               style={{
                 display: 'block', width: '100%', textAlign: 'left',
-                padding: '8px 12px', background: 'none', border: 'none',
-                borderBottom: '1px solid #F2F2F7', cursor: 'pointer', fontSize: 13,
+                padding: '8px 12px', background: selected.includes(o.id) ? '#F5F5F7' : 'none', border: 'none',
+                borderBottom: '1px solid #F2F2F7', cursor: selected.includes(o.id) ? 'default' : 'pointer', fontSize: 13,
+                opacity: selected.includes(o.id) ? 0.5 : 1,
               }}
             >
-              <Plus size={12} style={{ marginRight: 6, verticalAlign: 'middle' }} /> {o.label}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Plus size={12} style={{ verticalAlign: 'middle' }} />
+                <span style={{ fontWeight: 500 }}>{partLabel(o)}</span>
+                {o.oemRef && <span style={{ fontFamily: 'monospace', fontSize: 12, color: '#0071E3' }}>{o.oemRef}</span>}
+              </div>
+              <div style={{ fontSize: 11, color: '#86868B', marginLeft: 18 }}>{o.vehicle || 'Sin vehículo asignado'}</div>
             </button>
           ))}
+          {matches.length > MAX && (
+            <div style={{ padding: '8px 12px', fontSize: 12, color: '#86868B' }}>
+              …{matches.length - MAX} más. Afina la búsqueda o filtra por vehículo.
+            </div>
+          )}
         </div>
       )}
     </div>
