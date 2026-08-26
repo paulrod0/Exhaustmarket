@@ -334,6 +334,44 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 }
 
+// ─── Anti-scraping: rate limiting por identificador (peticiones + filas) por hora ───
+// Solo aplica a la LECTURA de tablas de catálogo (lo scrapeable). Contador en Neon.
+const CONTENT_TABLES = new Set([
+  'exhaust_schemas', 'exhaust_parts', 'exhaust_diagrams', 'exhaust_architectures',
+  'articles', 'manuals', 'vehicles', 'engines', 'exhaust_aftermarket_products',
+  'aftermarket_brands', 'compatibilities',
+])
+const RL_REQ_LIMIT = 600 // peticiones/hora a tablas de catálogo por identificador
+const RL_ROW_LIMIT = 20000 // filas/hora extraídas del catálogo por identificador
+
+function rateId(req: Request, auth: AuthContext | null): string {
+  if (auth?.profileId) return `u:${auth.profileId}`
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    || req.headers.get('x-real-ip') || 'unknown'
+  return `ip:${ip}`
+}
+
+/** Suma 1 petición y `rows` filas al contador horario del identificador. Devuelve true si
+ *  se superó algún límite (bloquear). Best-effort: si el contador falla, NO bloquea. */
+async function rateBump(pool: Pool, id: string, rows: number): Promise<boolean> {
+  try {
+    const r = await pool.query(
+      `INSERT INTO rate_limits (bucket, reqs, rows, reset_at)
+         VALUES ($1, 1, $2, now() + interval '1 hour')
+       ON CONFLICT (bucket) DO UPDATE SET
+         reqs = CASE WHEN rate_limits.reset_at < now() THEN 1 ELSE rate_limits.reqs + 1 END,
+         rows = CASE WHEN rate_limits.reset_at < now() THEN $2 ELSE rate_limits.rows + $2 END,
+         reset_at = CASE WHEN rate_limits.reset_at < now() THEN now() + interval '1 hour' ELSE rate_limits.reset_at END
+       RETURNING reqs, rows`,
+      [id, rows],
+    )
+    const row = r.rows[0] as { reqs: number; rows: number } | undefined
+    return !!row && (row.reqs > RL_REQ_LIMIT || row.rows > RL_ROW_LIMIT)
+  } catch {
+    return false
+  }
+}
+
 export async function POST(req: Request): Promise<Response> {
   let pool: Pool | null = null
   try {
@@ -373,6 +411,11 @@ export async function POST(req: Request): Promise<Response> {
       const selectCols = redactor && !ctx.isAdmin ? '*' : buildSelect(body.columns)
       const q = `SELECT ${selectCols} FROM ${ident(body.table)}${where}${order}${single ? ' LIMIT 2' : limit}`
       const rawRows = (await pool.query(q, values)).rows as Record<string, unknown>[]
+      // Anti-scraping: limita la extracción de catálogo por identificador/hora (no admin).
+      if (CONTENT_TABLES.has(body.table) && !ctx.isAdmin) {
+        const over = await rateBump(pool, rateId(req, auth), rawRows.length)
+        if (over) return json({ data: null, error: { message: 'Límite de extracción alcanzado. Inténtalo más tarde.' } }, 429)
+      }
       const rows = redactor && !ctx.isAdmin ? rawRows.map((r) => redactor(r, ctx)) : rawRows
       if (body.single) {
         if (rows.length === 0) return json({ data: null, error: { message: 'no rows' } }, 404)
