@@ -29,6 +29,29 @@ const MIME_BY_EXT: Record<string, string> = {
 
 const IMMUTABLE = 'public, max-age=31536000, immutable'
 
+const WATERMARKABLE = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif'])
+
+/** Marca de agua diagonal tenue "exhaustmarket.com" tileada sobre la imagen (disuade
+ *  la redistribución sin arruinar la vista del suscriptor). Solo para imágenes. */
+async function watermark(buf: Uint8Array, contentType: string): Promise<Uint8Array> {
+  // Import dinámico: si el binario de sharp no carga, lanza y el caller sirve el original.
+  const sharp = (await import('sharp')).default
+  const tile = 300
+  const svg = Buffer.from(
+    `<svg width="${tile}" height="${tile}" xmlns="http://www.w3.org/2000/svg">` +
+    `<text x="${tile / 2}" y="${tile / 2}" font-family="Arial, Helvetica, sans-serif" font-size="19" ` +
+    `fill="#ffffff" fill-opacity="0.13" text-anchor="middle" ` +
+    `transform="rotate(-30 ${tile / 2} ${tile / 2})">exhaustmarket.com</text></svg>`,
+  )
+  let pipeline = sharp(buf, { failOn: 'none', animated: false }).rotate() // respeta EXIF orientation
+    .composite([{ input: svg, tile: true, blend: 'over' }])
+  if (contentType === 'image/png') pipeline = pipeline.png()
+  else if (contentType === 'image/webp') pipeline = pipeline.webp({ quality: 82 })
+  else if (contentType === 'image/avif') pipeline = pipeline.avif({ quality: 55 })
+  else pipeline = pipeline.jpeg({ quality: 84 })
+  return pipeline.toBuffer()
+}
+
 function res(body: BodyInit | null, status: number, headers: Record<string, string>): Response {
   return new Response(body, { status, headers })
 }
@@ -95,14 +118,34 @@ async function serve(req: Request, isHead: boolean): Promise<Response> {
     }
 
     const obj = await s3.send(new GetObjectCommand({ Bucket: BUCKET, Key: key }))
-    const body = obj.Body as { transformToWebStream?: () => ReadableStream } | undefined
+    const body = obj.Body as {
+      transformToWebStream?: () => ReadableStream
+      transformToByteArray?: () => Promise<Uint8Array>
+    } | undefined
     if (!body?.transformToWebStream) return res('empty', 502, { 'cache-control': 'no-store', 'content-type': 'text/plain' })
 
+    const ctype = contentTypeFor(key, obj.ContentType)
     const headers: Record<string, string> = {
-      'content-type': contentTypeFor(key, obj.ContentType),
+      'content-type': ctype,
       'cache-control': IMMUTABLE,
       'vercel-cdn-cache-control': IMMUTABLE,
     }
+
+    // Imágenes: marca de agua al vuelo (buffer, cacheado por el CDN). Resto (PDF/3D/vídeo):
+    // streaming passthrough sin marca.
+    if (WATERMARKABLE.has(ctype) && body.transformToByteArray) {
+      const raw = await body.transformToByteArray()
+      try {
+        const marked = await watermark(raw, ctype)
+        headers['content-length'] = String(marked.length)
+        return res(marked, 200, headers)
+      } catch (e) {
+        console.error('watermark failed, sirviendo original', key, (e as Error)?.message)
+        headers['content-length'] = String(raw.length)
+        return res(raw, 200, headers) // fallback: original sin marca, mejor que romper la imagen
+      }
+    }
+
     if (obj.ContentLength != null) headers['content-length'] = String(obj.ContentLength)
     if (obj.ETag) headers['etag'] = obj.ETag
     return res(body.transformToWebStream(), 200, headers)
