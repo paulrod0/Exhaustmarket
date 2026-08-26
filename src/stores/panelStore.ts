@@ -1,7 +1,15 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 import { attachRelated } from '../lib/joinRelated'
+import { useAuthStore } from './authStore'
 import type { Database } from '../types/database'
+
+// El "id de dueño" para columnas owner-scoped (professional_id, workshop_id, seller_id...) es el
+// UUID del perfil (user_profiles.id), NO el Clerk id de supabase.auth.getUser().user.id. El facade
+// /api/db compara esas columnas contra auth.profileId (uuid). Ver authStore.fetchProfile.
+function currentProfileId(): string | null {
+  return useAuthStore.getState().profile?.id ?? null
+}
 
 type Product = Database['public']['Tables']['professional_products']['Row']
 type ProductInsert = Database['public']['Tables']['professional_products']['Insert']
@@ -74,13 +82,13 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 
   // --- Products ---
   fetchMyProducts: async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const profileId = currentProfileId()
+    if (!profileId) return
 
     const { data, error } = await supabase
       .from('professional_products')
       .select('*')
-      .eq('professional_id', user.id)
+      .eq('professional_id', profileId)
       .order('created_at', { ascending: false })
 
     if (error) { set({ error: error.message }); return }
@@ -88,12 +96,12 @@ export const usePanelStore = create<PanelState>((set, get) => ({
   },
 
   createProduct: async (product) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('No autenticado')
+    const profileId = currentProfileId()
+    if (!profileId) throw new Error('No autenticado')
 
     const { error } = await supabase
       .from('professional_products')
-      .insert({ ...product, professional_id: user.id } as any)
+      .insert({ ...product, professional_id: profileId } as any)
 
     if (error) throw error
     await get().fetchMyProducts()
@@ -121,13 +129,13 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 
   // --- Services ---
   fetchMyServices: async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const profileId = currentProfileId()
+    if (!profileId) return
 
     const { data, error } = await supabase
       .from('workshop_services')
       .select('*')
-      .eq('workshop_id', user.id)
+      .eq('workshop_id', profileId)
       .order('created_at', { ascending: false })
 
     if (error) { set({ error: error.message }); return }
@@ -135,12 +143,12 @@ export const usePanelStore = create<PanelState>((set, get) => ({
   },
 
   createService: async (service) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('No autenticado')
+    const profileId = currentProfileId()
+    if (!profileId) throw new Error('No autenticado')
 
     const { error } = await supabase
       .from('workshop_services')
-      .insert({ ...service, workshop_id: user.id } as any)
+      .insert({ ...service, workshop_id: profileId } as any)
 
     if (error) throw error
     await get().fetchMyServices()
@@ -168,13 +176,13 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 
   // --- Transactions ---
   fetchMyTransactions: async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const profileId = currentProfileId()
+    if (!profileId) return
 
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
-      .eq('seller_id', user.id)
+      .eq('seller_id', profileId)
       .order('created_at', { ascending: false })
 
     if (error) { set({ error: error.message }); return }
@@ -186,13 +194,13 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 
   // --- Invoices ---
   fetchMyInvoices: async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const profileId = currentProfileId()
+    if (!profileId) return
 
     const { data, error } = await supabase
       .from('invoices')
       .select('*')
-      .eq('seller_id', user.id)
+      .eq('seller_id', profileId)
       .order('created_at', { ascending: false })
 
     if (error) { set({ error: error.message }); return }
@@ -200,8 +208,12 @@ export const usePanelStore = create<PanelState>((set, get) => ({
   },
 
   createInvoice: async (invoiceData) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('No autenticado')
+    const profileId = currentProfileId()
+    if (!profileId) throw new Error('No autenticado')
+    // NOTA: 'invoices' es write:'admin' en el facade (la EMISIÓN de facturas no puede venir del
+    // cliente: forjaría facturas atribuidas a terceros). Este insert directo seguirá devolviendo
+    // 403 por diseño; la emisión real debe ir por un endpoint servidor. Mantenemos seller_id con el
+    // UUID correcto para cuando ese flujo exista. No abrir el rule a write:'authed' (reabre el IDOR).
 
     // Generate invoice number: INV-YYYYMMDD-XXXX
     const now = new Date()
@@ -213,7 +225,7 @@ export const usePanelStore = create<PanelState>((set, get) => ({
       .from('invoices')
       .insert({
         invoice_number: invoiceNumber,
-        seller_id: user.id,
+        seller_id: profileId,
         buyer_id: invoiceData.buyer_id,
         transaction_id: invoiceData.transaction_id,
         items: invoiceData.items,
@@ -244,13 +256,13 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 
   // --- Catalog Sync ---
   fetchCatalogSources: async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const profileId = currentProfileId()
+    if (!profileId) return
 
     const { data, error } = await supabase
       .from('catalog_sources')
       .select('*')
-      .eq('workshop_id', user.id)
+      .eq('workshop_id', profileId)
       .order('created_at', { ascending: false })
 
     if (error) { set({ error: error.message }); return }
@@ -258,13 +270,13 @@ export const usePanelStore = create<PanelState>((set, get) => ({
   },
 
   addCatalogSource: async (source) => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) throw new Error('No autenticado')
+    const profileId = currentProfileId()
+    if (!profileId) throw new Error('No autenticado')
 
     const { error } = await supabase
       .from('catalog_sources')
       .insert({
-        workshop_id: user.id,
+        workshop_id: profileId,
         source_type: source.source_type,
         url: source.url,
         file_url: source.file_url,
@@ -305,17 +317,17 @@ export const usePanelStore = create<PanelState>((set, get) => ({
 
   // --- Stats ---
   fetchStats: async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const profileId = currentProfileId()
+    if (!profileId) return
 
     const now = new Date()
     const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
 
     const [totalRes, monthlyRes, ordersRes, quotesRes] = await Promise.all([
-      supabase.from('transactions').select('amount').eq('seller_id', user.id).eq('status', 'completed'),
-      supabase.from('transactions').select('amount').eq('seller_id', user.id).eq('status', 'completed').gte('created_at', firstOfMonth),
-      supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('seller_id', user.id),
-      supabase.from('quote_requests').select('id', { count: 'exact', head: true }).eq('target_user_id', user.id).eq('status', 'pending'),
+      supabase.from('transactions').select('amount').eq('seller_id', profileId).eq('status', 'completed'),
+      supabase.from('transactions').select('amount').eq('seller_id', profileId).eq('status', 'completed').gte('created_at', firstOfMonth),
+      supabase.from('transactions').select('id', { count: 'exact', head: true }).eq('seller_id', profileId),
+      supabase.from('quote_requests').select('id', { count: 'exact', head: true }).eq('target_user_id', profileId).eq('status', 'pending'),
     ])
 
     const totalRevenue = (totalRes.data ?? []).reduce((sum, t) => sum + (t.amount ?? 0), 0)

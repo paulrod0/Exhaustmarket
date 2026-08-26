@@ -1,7 +1,15 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 import { attachRelated, attachChildren } from '../lib/joinRelated'
+import { useAuthStore } from './authStore'
 import type { Database } from '../types/database'
+
+// El "id de dueño" para columnas owner-scoped (user_id, target_user_id, quoted_by...) es el UUID
+// del perfil (user_profiles.id), NO el Clerk id que devuelve supabase.auth.getUser().user.id. El
+// facade /api/db compara esas columnas contra auth.profileId (uuid). Ver authStore.fetchProfile.
+function currentProfileId(): string | null {
+  return useAuthStore.getState().profile?.id ?? null
+}
 
 type QuoteRequest = Database['public']['Tables']['quote_requests']['Row']
 type Quote = Database['public']['Tables']['quotes']['Row']
@@ -63,14 +71,15 @@ export const useQuoteStore = create<QuoteState>((set, get) => ({
     set({ loading: true, error: null })
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('No autenticado')
+      const profile = useAuthStore.getState().profile
+      if (!profile) throw new Error('No autenticado')
 
-      // Insert quote request
+      // Insert quote request. user_id = UUID del perfil (no el Clerk id): el facade valida el insert
+      // con insertColumn 'user_id' === auth.profileId, así que solo el solicitante puede crearla.
       const { data: request, error } = await supabase
         .from('quote_requests')
         .insert({
-          user_id: user.id,
+          user_id: profile.id,
           target_user_id: reqData.target_user_id,
           car_model: reqData.car_model,
           car_year: reqData.car_year,
@@ -82,11 +91,12 @@ export const useQuoteStore = create<QuoteState>((set, get) => ({
 
       if (error) throw error
 
-      // Fetch target workshop email and sender profile for the email
-      const [targetRes, senderRes] = await Promise.all([
-        supabase.from('user_profiles').select('email, full_name, company_name').eq('id', reqData.target_user_id).single(),
-        supabase.from('user_profiles').select('full_name').eq('id', user.id).single(),
-      ])
+      // Datos para el email: el destinatario se consulta; el remitente ya lo tenemos en el perfil.
+      const targetRes = await supabase
+        .from('user_profiles')
+        .select('email, full_name, company_name')
+        .eq('id', reqData.target_user_id)
+        .single()
 
       if (targetRes.data?.email) {
         // Send email notification via Edge Function
@@ -94,7 +104,7 @@ export const useQuoteStore = create<QuoteState>((set, get) => ({
           body: {
             to_email: targetRes.data.email,
             to_name: targetRes.data.company_name || targetRes.data.full_name,
-            from_name: senderRes.data?.full_name ?? 'Usuario',
+            from_name: profile.full_name ?? 'Usuario',
             car_model: reqData.car_model,
             car_year: reqData.car_year,
             service_type: reqData.service_type,
@@ -113,13 +123,13 @@ export const useQuoteStore = create<QuoteState>((set, get) => ({
   },
 
   fetchSentRequests: async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const profileId = currentProfileId()
+    if (!profileId) return
 
     const { data, error } = await supabase
       .from('quote_requests')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', profileId)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -135,13 +145,13 @@ export const useQuoteStore = create<QuoteState>((set, get) => ({
   },
 
   fetchReceivedRequests: async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
+    const profileId = currentProfileId()
+    if (!profileId) return
 
     const { data, error } = await supabase
       .from('quote_requests')
       .select('*')
-      .eq('target_user_id', user.id)
+      .eq('target_user_id', profileId)
       .order('created_at', { ascending: false })
 
     if (error) {
@@ -160,14 +170,14 @@ export const useQuoteStore = create<QuoteState>((set, get) => ({
     set({ loading: true, error: null })
 
     try {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) throw new Error('No autenticado')
+      const profile = useAuthStore.getState().profile
+      if (!profile) throw new Error('No autenticado')
 
       const { error: quoteError } = await supabase
         .from('quotes')
         .insert({
           quote_request_id: data.quote_request_id,
-          quoted_by: user.id,
+          quoted_by: profile.id,
           price: data.price,
           notes: data.notes,
           valid_until: data.valid_until,

@@ -135,6 +135,12 @@ interface Rule {
   // el padre pertenece al usuario por CUALQUIERA de parentOwnerColumns. insertColumn valida el
   // insert (columna que debe == yo, p.ej. quotes.quoted_by).
   ownerVia?: { column: string; parentTable: string; parentOwnerColumns: string[]; insertColumn?: string }
+  // Solo para tablas ownerAny cuyo INSERT debe restringirse a UNA parte concreta (p.ej.
+  // quote_requests: la LEEN el solicitante y el taller, pero solo el solicitante la CREA). Cuando
+  // está presente, canWrite exige row[insertColumn] === profileId en el insert; read/update/delete
+  // siguen scopeados por ownerAny. Sin esto, ownerAny dejaría forjar el remitente (crear una
+  // solicitud a nombre de otro usuario).
+  insertColumn?: string
 }
 
 const RULES: Record<string, Rule> = {
@@ -151,7 +157,12 @@ const RULES: Record<string, Rule> = {
   // Movimientos económicos: visibles para comprador Y vendedor; los crea/actualiza el
   // settlement (webhook/marketplace) por SQL directo, nunca el cliente vía facade → write admin.
   transactions: { read: 'authed', write: 'admin', ownerAny: ['buyer_id', 'seller_id'] },
-  quote_requests: { read: 'authed', write: 'authed', ownerColumn: 'user_id' },
+  // Solicitudes de presupuesto: las LEE/edita el solicitante (user_id) Y el taller destinatario
+  // (target_user_id) → ownerAny (espejo de las RLS: SELECT por ambas columnas). Solo el solicitante
+  // puede CREARLA → insertColumn:'user_id' (RLS INSERT WITH CHECK user_id = auth.uid()). Con
+  // ownerColumn simple, el destinatario NO podía ver sus "recibidas" ni marcar la solicitud como
+  // 'quoted' al responder (el facade forzaba user_id = yo en todo SELECT/UPDATE).
+  quote_requests: { read: 'authed', write: 'authed', ownerAny: ['user_id', 'target_user_id'], insertColumn: 'user_id' },
   // Presupuestos: hijos de quote_requests. Los ve el solicitante (user_id) y el taller (target_user_id).
   quotes: { read: 'authed', write: 'authed', ownerVia: { column: 'quote_request_id', parentTable: 'quote_requests', parentOwnerColumns: ['user_id', 'target_user_id'], insertColumn: 'quoted_by' } },
   // Facturas (PII + importes): visibles para vendedor Y comprador; el vendedor las emite (insert).
@@ -270,7 +281,12 @@ function canWrite(table: string, auth: AuthContext | null, row?: Record<string, 
     // Insert: la fila debe pertenecer al usuario. Se admite cualquiera de los esquemas de
     // propietario (columna simple, dos-partes ownerAny, o insertColumn de ownerVia).
     if (r.ownerColumn) return row[r.ownerColumn] === auth.profileId
-    if (r.ownerAny?.length) return r.ownerAny.some((c) => row[c] === auth.profileId)
+    if (r.ownerAny?.length) {
+      // insertColumn (si está) restringe la CREACIÓN a una parte concreta (p.ej. el solicitante
+      // en quote_requests); si no, basta con ser cualquiera de las partes.
+      if (r.insertColumn) return row[r.insertColumn] === auth.profileId
+      return r.ownerAny.some((c) => row[c] === auth.profileId)
+    }
     if (r.ownerVia?.insertColumn) return row[r.ownerVia.insertColumn] === auth.profileId
   }
   return true
