@@ -372,6 +372,26 @@ async function rateBump(pool: Pool, id: string, rows: number): Promise<boolean> 
   }
 }
 
+// Columnas que un NO-admin nunca puede escribir por el facade (las gestiona el servidor:
+// webhooks Stripe, kyc en api/marketplace.ts, o el admin). Evita auto-escalada de rol
+// (is_admin), auto-subida de tier (user_type), auto-verificación (is_verified/kyc_*),
+// comisión 0, o pisar ids de Stripe.
+const PROTECTED_COLUMNS: Record<string, Set<string>> = {
+  user_profiles: new Set([
+    'is_admin', 'user_type', 'is_verified', 'kyc_status', 'kyc_submitted_at', 'kyc_verified_at',
+    'commission_rate', 'stripe_customer_id', 'stripe_account_id', 'charges_enabled',
+    'payouts_enabled', 'connect_details_submitted', 'connect_requirements', 'connect_onboarded_at',
+  ]),
+}
+/** Quita del payload las columnas protegidas si el actor no es admin. */
+function stripProtected(table: string, data: Record<string, unknown>, auth: AuthContext | null): Record<string, unknown> {
+  const prot = PROTECTED_COLUMNS[table]
+  if (!prot || auth?.isAdmin) return data
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(data)) if (!prot.has(k)) out[k] = v
+  return out
+}
+
 export async function POST(req: Request): Promise<Response> {
   let pool: Pool | null = null
   try {
@@ -429,7 +449,8 @@ export async function POST(req: Request): Promise<Response> {
     if (!canWrite(body.table, auth)) return json({ data: null, error: { message: 'forbidden' } }, 403)
 
     if (body.op === 'insert' || body.op === 'upsert') {
-      const rows = Array.isArray(body.data) ? body.data : [body.data]
+      const rows = (Array.isArray(body.data) ? body.data : [body.data])
+        .map((r) => stripProtected(body.table, r as Record<string, unknown>, auth)) // no-admin: sin columnas protegidas
       if (!rows.length) return json({ data: [], error: null })
       const cols = Object.keys(rows[0] ?? {})
       if (!cols.length) return json({ data: null, error: { message: 'no columns' } }, 400)
@@ -456,10 +477,11 @@ export async function POST(req: Request): Promise<Response> {
 
     if (body.op === 'update') {
       if (!body.data || Array.isArray(body.data)) return json({ data: null, error: { message: 'data must be object' } }, 400)
-      const cols = Object.keys(body.data)
+      const data = stripProtected(body.table, body.data, auth) // no-admin no puede tocar columnas protegidas
+      const cols = Object.keys(data)
       if (!cols.length) return json({ data: null, error: { message: 'no columns' } }, 400)
       const values: unknown[] = []
-      const sets = cols.map((c) => { values.push((body.data as Record<string, unknown>)[c]); return `${ident(c)} = $${values.length}` })
+      const sets = cols.map((c) => { values.push(data[c]); return `${ident(c)} = $${values.length}` })
       const filters: Filter[] = [...(body.filters ?? [])]
       const oFilter = ownerFilter(body.table, auth, true) // escritura = owner-only (aunque haya publicColumn)
       if (oFilter) filters.push([oFilter.column, 'eq', oFilter.value])
