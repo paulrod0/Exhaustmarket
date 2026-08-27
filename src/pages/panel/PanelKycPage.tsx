@@ -57,7 +57,7 @@ export default function PanelKycPage() {
       })
       const j = await res.json()
       if (!res.ok) throw new Error(j.error || 'Error')
-      setKycStatus('pending')
+      setKycStatus(j.kyc_status ?? 'verified') // beta: auto-aprobado -> 'verified'
       setOk(true)
       fetchProfile().catch(() => undefined)
     } catch (e) {

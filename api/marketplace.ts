@@ -265,13 +265,16 @@ async function markRead(auth: AuthCtx, body: { thread_key?: string }): Promise<R
 async function kycSubmit(auth: AuthCtx, body: { dni_cif?: string; iban?: string; billing_address?: string; billing_city?: string; billing_zip?: string; billing_country?: string }): Promise<Response> {
   if (!body.dni_cif || !body.iban) return json({ error: 'dni_cif + iban required' }, 400)
   const pool = pgPool()
+  // BETA: auto-aprobación al enviar los datos (sin revisión manual). En PRODUCCIÓN esto vuelve
+  // a 'pending' y la verificación real la hará Stripe Connect (identidad + banco). is_verified se
+  // mantiene sincronizado con kyc_status (el badge del perfil y el "✓" del mapa usan is_verified).
   await pool.query(`
     UPDATE public.user_profiles
     SET dni_cif = $1, iban = $2, billing_address = $3, billing_city = $4, billing_zip = $5, billing_country = $6,
-        kyc_status = 'pending', kyc_submitted_at = now()
+        kyc_status = 'verified', kyc_submitted_at = now(), kyc_verified_at = now(), is_verified = true
     WHERE id = $7
   `, [body.dni_cif, body.iban, body.billing_address ?? null, body.billing_city ?? null, body.billing_zip ?? null, body.billing_country ?? null, auth.profileId])
-  return json({ ok: true, kyc_status: 'pending' })
+  return json({ ok: true, kyc_status: 'verified' })
 }
 
 /* ─── WALLET ─── */
@@ -369,6 +372,7 @@ async function kycReview(auth: AuthCtx, body: { profile_id?: string; action?: st
   await pool.query(`
     UPDATE public.user_profiles
     SET kyc_status = $1,
+        is_verified = ($1 = 'verified'),
         kyc_verified_at = CASE WHEN $1 = 'verified' THEN now() ELSE kyc_verified_at END
     WHERE id = $2
   `, [body.action, body.profile_id])
