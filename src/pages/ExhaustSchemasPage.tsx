@@ -876,19 +876,6 @@ export default function ExhaustSchemasPage() {
       {car && (
         <>
           {(() => {
-            // Cálculos derivados para los stats cards
-            const componentsArr = Object.values(car.components ?? {})
-            const componentsCount = componentsArr.length
-            const materialsCount =
-              car.total_materials_count ??
-              new Set(componentsArr.map((c) => c.material).filter(Boolean)).size
-            const totalHours =
-              car.total_estimated_hours ??
-              componentsArr.reduce((s, c) => s + (c.fabrication_hours ?? 0), 0)
-            const totalCost =
-              car.total_estimated_cost ??
-              componentsArr.reduce((s, c) => s + (c.total_cost ?? c.material_cost ?? 0), 0)
-
             return (
               <div
                 style={{
@@ -974,41 +961,6 @@ export default function ExhaustSchemasPage() {
                       </div>
                     )}
                   </div>
-                </div>
-
-                {/* Stats cards */}
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
-                    gap: 10,
-                  }}
-                >
-                  <DossierStat
-                    icon={<Box size={16} />}
-                    label="componentes"
-                    value={componentsCount.toString()}
-                    accent="#0071E3"
-                  />
-                  <DossierStat
-                    icon={<Layers size={16} />}
-                    label="materiales"
-                    value={materialsCount.toString()}
-                    accent="#34C759"
-                  />
-                  <DossierStat
-                    icon={<Clock size={16} />}
-                    label="estimadas"
-                    value={totalHours > 0 ? `${totalHours.toFixed(1)} h` : '—'}
-                    accent="#FF9500"
-                  />
-                  <DossierStat
-                    icon={<Euro size={16} />}
-                    label="total sistema"
-                    value={totalCost > 0 ? `${totalCost.toFixed(0)} €` : '—'}
-                    accent="#FFD700"
-                    highlight
-                  />
                 </div>
 
                 {car.note && (
@@ -1545,56 +1497,6 @@ const tdStyle: React.CSSProperties = {
   borderBottom: '1px solid #F2F2F7',
   color: '#1D1D1F',
   verticalAlign: 'top',
-}
-
-function DossierStat({
-  icon,
-  label,
-  value,
-  accent,
-  highlight = false,
-}: {
-  icon: React.ReactNode
-  label: string
-  value: string
-  accent: string
-  highlight?: boolean
-}) {
-  return (
-    <div
-      style={{
-        backgroundColor: highlight ? `${accent}10` : '#FAFAFA',
-        border: `1px solid ${highlight ? `${accent}40` : '#F2F2F7'}`,
-        borderRadius: 12,
-        padding: 14,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-      }}
-    >
-      <div
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 10,
-          backgroundColor: `${accent}1A`,
-          color: accent,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        {icon}
-      </div>
-      <div>
-        <p style={{ fontSize: 18, fontWeight: 700, color: '#1D1D1F', margin: 0, letterSpacing: '-0.02em' }}>
-          {value}
-        </p>
-        <p style={{ fontSize: 11, color: '#86868B', margin: 0 }}>{label}</p>
-      </div>
-    </div>
-  )
 }
 
 function DossierSection({
