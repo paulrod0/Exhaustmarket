@@ -1,6 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
-import { Upload, Check, Clock, X, Pencil, FileCheck, AlertCircle, LogOut } from 'lucide-react'
+import { auth as authClient } from '../lib/auth-client'
+import { Upload, Check, Clock, X, Pencil, FileCheck, AlertCircle, LogOut, Wallet, ChevronRight } from 'lucide-react'
 
 export default function ProfilePage() {
   const { profile, updateProfile, signOut } = useAuthStore()
@@ -143,6 +145,9 @@ export default function ProfilePage() {
           <span>{error}</span>
         </div>
       )}
+
+      {/* Monedero: acceso directo desde la zona de usuario (antes solo estaba dentro del Panel) */}
+      <WalletShortcut />
 
       {/* Profile Info Card */}
       <div className="card-flat" style={{ padding: 32, marginBottom: 32 }}>
@@ -395,5 +400,39 @@ function DocumentItem({ title, status }: { title: string; status: 'pending' | 'a
         {config.icon} {config.text}
       </span>
     </li>
+  )
+}
+
+/** Saldo del monedero + enlace a /monedero. Si no se puede leer, el enlace sigue funcionando. */
+function WalletShortcut() {
+  const [balance, setBalance] = useState<number | null>(null)
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const token = await authClient.__getToken()
+        const res = await fetch('/api/marketplace', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ op: 'wallet_info' }),
+        })
+        const data = await res.json()
+        if (alive && data?.wallet) setBalance(Number(data.wallet.balance ?? 0))
+      } catch { /* sin saldo: se muestra solo el enlace */ }
+    })()
+    return () => { alive = false }
+  }, [])
+  return (
+    <Link to="/monedero" className="card-flat" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 24px', marginBottom: 24, textDecoration: 'none', color: 'inherit' }}>
+      <div style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: '#E5F2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Wallet size={20} style={{ color: '#0071E3' }} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 16, fontWeight: 600, color: '#1D1D1F' }}>Mi monedero</div>
+        <div style={{ fontSize: 13, color: '#86868B' }}>Créditos por colaborar en el catálogo y su historial</div>
+      </div>
+      {balance != null && <span style={{ fontSize: 17, fontWeight: 600, color: '#0071E3' }}>{balance.toFixed(2)} €</span>}
+      <ChevronRight size={18} style={{ color: '#86868B', flexShrink: 0 }} />
+    </Link>
   )
 }

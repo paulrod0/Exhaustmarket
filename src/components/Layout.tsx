@@ -53,7 +53,8 @@ export default function Layout() {
     ...(profile?.user_type === 'professional' || profile?.user_type === 'premium'
       ? [{ to: '/designs', label: '3D' }]
       : []),
-    ...(profile?.user_type === 'workshop' || profile?.user_type === 'professional'
+    // Mismo criterio que PanelGuard (App.tsx): taller, profesional, premium y fabricante.
+    ...(['workshop', 'professional', 'premium', 'manufacturer'].includes(profile?.user_type ?? '')
       ? [{ to: '/panel', label: 'Panel' }]
       : []),
     ...(profile?.is_collaborator || profile?.is_admin ? [{ to: '/colaborar', label: 'Colaborar' }] : []),
@@ -96,6 +97,7 @@ export default function Layout() {
               color: '#1D1D1F',
               letterSpacing: '-0.01em',
               flexShrink: 0,
+              marginRight: '20px',
             }}
           >
             ExhaustMarket
@@ -103,13 +105,13 @@ export default function Layout() {
 
           {/* Derecha: menú de escritorio + avisos + botón de menú móvil (un solo bloque para que
               «space-between» deje el logo a la izquierda y todo esto a la derecha) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
-          {/* Desktop Nav Links */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          {/* Desktop Nav Links (16px entre enlaces: con todos los enlaces de un admin + la campana cabe en 980px) */}
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '24px',
+              gap: '16px',
             }}
             className="desktop-nav"
           >

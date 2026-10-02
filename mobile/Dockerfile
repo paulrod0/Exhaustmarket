@@ -5,7 +5,7 @@ FROM node:20-slim
 WORKDIR /app
 
 # Instalar dependencias necesarias para Expo
-RUN apt-get update && apt-get install -null -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
