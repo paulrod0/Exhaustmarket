@@ -3,6 +3,8 @@ import { usePanelStore } from '../../stores/panelStore'
 import { useAuthStore } from '../../stores/authStore'
 import { supabase } from '../../lib/supabase'
 import { Plus, Pencil, Trash2, X, Package, ImagePlus } from 'lucide-react'
+import ProductSpecsFields, { emptySpecForm, specFormFrom, type SpecForm } from '../../components/ProductSpecsFields'
+import { cleanSpecs } from '../../lib/productSpecs'
 
 interface ProductForm {
   product_name: string
@@ -12,6 +14,7 @@ interface ProductForm {
   stock: number
   category: string
   images: string[]
+  specs: SpecForm
 }
 
 interface ServiceForm {
@@ -76,6 +79,7 @@ export default function PanelProductsPage() {
     stock: 0,
     category: '',
     images: [],
+    specs: emptySpecForm(),
   }
 
   const emptyServiceForm: ServiceForm = {
@@ -125,6 +129,7 @@ export default function PanelProductsPage() {
         stock: item.stock ?? 0,
         category: item.category ?? '',
         images: item.images ?? [],
+        specs: specFormFrom(item),
       })
     }
     setShowForm(true)
@@ -149,10 +154,13 @@ export default function PanelProductsPage() {
           await createService(serviceForm)
         }
       } else {
+        // Las medidas viajan como columnas spec_* (número o null), no como objeto.
+        const { specs, ...rest } = productForm
+        const payload = { ...rest, ...cleanSpecs(specs) }
         if (editId) {
-          await updateProduct(editId, productForm)
+          await updateProduct(editId, payload)
         } else {
-          await createProduct(productForm)
+          await createProduct(payload)
         }
       }
       closeForm()
@@ -386,6 +394,11 @@ export default function PanelProductsPage() {
                   }
                 />
               </div>
+
+              {/* Medidas (products only) */}
+              {!isWorkshop && (
+                <ProductSpecsFields value={productForm.specs} onChange={(specs) => setProductForm({ ...productForm, specs })} />
+              )}
 
               {/* Images (products only) */}
               {!isWorkshop && (

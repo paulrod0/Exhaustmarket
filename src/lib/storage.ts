@@ -42,11 +42,11 @@ async function uploadToBucket(
 }
 
 async function deleteFromBucket(bucket: string, publicUrl: string): Promise<void> {
-  const marker = `/${bucket}/`
-  const idx = publicUrl.indexOf(marker)
-  if (idx === -1) return
-  const path = publicUrl.slice(idx + marker.length)
-  const { error } = await supabase.storage.from(bucket).remove([path])
+  // Pasar la URL pública COMPLETA a /api/storage-delete (deriva ahí el key R2, quitando
+  // el prefijo /api/img/). Antes se recortaba a una ruta relativa al bucket y `new URL()`
+  // fallaba en el endpoint → el borrado se tragaba el error y dejaba objetos huérfanos en R2.
+  if (!publicUrl) return
+  const { error } = await supabase.storage.from(bucket).remove([publicUrl])
   if (error) throw error
 }
 

@@ -1,10 +1,15 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { Layers, Info, ChevronRight, X, Search, Box, Clock, Euro, Hash, Camera, Play, ShoppingBag } from 'lucide-react'
+import { Layers, Info, ChevronRight, Search, Box, Clock, Euro, Hash, Camera, Play, ShoppingBag, ShoppingCart, Lightbulb, Ruler } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { useAuthStore } from '../stores/authStore'
-import { canViewTiers, canSeeOem, canSeeWorkshopData } from '../lib/contentTypes'
+import { canViewTiers, canSeeOem, canSeeWorkshopData, effectivePrice } from '../lib/contentTypes'
 import { sortedComponents, emissionsBadgeLabel } from '../lib/schemaDefinitions'
+import { attachRelated } from '../lib/joinRelated'
+import { cart } from '../lib/cart'
+import { toast } from '../lib/toast'
+import { useMediaQuery } from '../lib/useMediaQuery'
+import { SPEC_SELECT, specSummary, type ProductSpecs } from '../lib/productSpecs'
 import SchemaRelatedPanel from '../components/SchemaRelatedPanel'
 import TierBadge from '../components/TierBadge'
 import UpgradeCallout from '../components/UpgradeCallout'
@@ -28,6 +33,8 @@ interface Component {
   difficulty?: 'baja' | 'media' | 'alta'
   fabricable?: boolean
   image_url?: string
+  /** Productos del marketplace vinculados exactamente a esta pieza (plug&play). */
+  product_ids?: string[]
 }
 
 type Layout = 'v8tt' | 'v10na' | 'flat6na' | 'i6tt' | 'v12na' | 'flat6tt' | 'v8na'
@@ -38,6 +45,7 @@ interface DespieceItem {
   specification: string
   quantity: string
   process: string
+  product_ids?: string[]
 }
 
 interface CostBreakdown {
@@ -576,7 +584,8 @@ function GenericDiagram({
   }
   return (
     <div style={{ padding: '4px 2px', display: 'flex', justifyContent: 'center' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0 }}>
+      {/* Columna de 230px que se estrecha (minWidth 0) en contenedores más angostos */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0, width: '100%', maxWidth: 230, minWidth: 0 }}>
         {/* motor (arriba) */}
         <div style={{
           flexShrink: 0, width: 130, height: 30, borderRadius: 8, backgroundColor: '#E5E5EA',
@@ -584,28 +593,55 @@ function GenericDiagram({
         }}>
           <span style={{ fontSize: 10, color: '#86868B', letterSpacing: '0.08em' }}>MOTOR</span>
         </div>
-        {list.map((c) => {
+        {list.map((c, i) => {
           const isSel = c.id === selected
           return (
-            <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+            <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, width: '100%' }}>
               {/* conector vertical (flujo de gases descendente) */}
               <div style={{ width: 2, height: 18, backgroundColor: '#D2D2D7' }} />
               <button
+                type="button"
                 onClick={() => onSelect(c.id)}
                 title={c.name}
+                aria-label={`${i + 1}. ${c.name}`}
+                aria-pressed={isSel}
                 style={{
-                  width: 230, maxWidth: '100%', padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
+                  width: '100%', padding: '10px 12px', borderRadius: 12, cursor: 'pointer',
                   border: `2px solid ${isSel ? color : '#E5E5EA'}`,
                   backgroundColor: isSel ? `${color}12` : '#FFFFFF',
-                  color: '#1D1D1F', textAlign: 'center', transition: 'all .15s ease',
+                  color: '#1D1D1F', textAlign: 'left', transition: 'all .15s ease',
+                  display: 'flex', alignItems: 'center', gap: 10,
                 }}
               >
-                <div style={{ fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>{c.name}</div>
-                {c.material && <div style={{ fontSize: 10, color: '#86868B', marginTop: 2 }}>{c.material}</div>}
+                {/* Número clicable (mismo índice que las pills) */}
+                <span
+                  style={{
+                    width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: 700,
+                    backgroundColor: isSel ? color : '#F2F2F7',
+                    color: isSel ? '#FFFFFF' : '#1D1D1F',
+                    transition: 'all .15s ease',
+                  }}
+                >
+                  {i + 1}
+                </span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: 'block', fontSize: 13, fontWeight: 600, lineHeight: 1.2 }}>{c.name}</span>
+                  {c.material && <span style={{ display: 'block', fontSize: 10, color: '#86868B', marginTop: 2 }}>{c.material}</span>}
+                </span>
               </button>
             </div>
           )
         })}
+        {/* salida (abajo) */}
+        <div style={{ width: 2, height: 18, backgroundColor: '#D2D2D7' }} />
+        <div style={{
+          flexShrink: 0, width: 130, height: 30, borderRadius: 8, border: '1px dashed #D2D2D7',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <span style={{ fontSize: 10, color: '#86868B', letterSpacing: '0.08em' }}>SALIDA</span>
+        </div>
       </div>
     </div>
   )
@@ -613,7 +649,28 @@ function GenericDiagram({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-interface MarketProduct { id: string; product_name: string; price: number | null; images: string[] | null; category: string | null }
+// OJO: professional_products NO tiene columna `in_stock` (solo `stock` integer, default 0); pedirla
+// en el select hace fallar la query entera del facade y deja la página sin productos.
+interface MarketProduct extends ProductSpecs {
+  id: string
+  product_name: string
+  price: number | null
+  pro_price?: number | null
+  images: string[] | null
+  category: string | null
+  stock?: number | null
+  professional_id?: string | null
+  /** Adjuntado en cliente (attachRelated), igual que el store del marketplace. Solo para el carrito. */
+  seller?: { full_name?: string | null; company_name?: string | null } | null
+}
+
+/** Stock legible (misma regla que la ficha de producto: stock <= 0 → "Sin stock"). */
+function stockInfo(p: MarketProduct): { label: string; ok: boolean } {
+  if (p.stock == null) return { label: 'En stock', ok: true }
+  return p.stock > 0 ? { label: `${p.stock} ud`, ok: true } : { label: 'Sin stock', ok: false }
+}
+
+const fmtEur = (n: number) => `${n.toFixed(2)} €`
 
 const _norm = (s: string) => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
 // Reglas de emparejamiento componente → productos (opción C: automático por categoría/nombre).
@@ -666,6 +723,18 @@ export default function ExhaustSchemasPage() {
   const [selectedBrand, setSelectedBrand] = useState<string>('')
   const [selectedCarId, setSelectedCarId] = useState<string | null>(null)
   const [selectedComponent, setSelectedComponent] = useState<string | null>(null)
+  const [productsLoaded, setProductsLoaded] = useState(false)
+  const [justAddedId, setJustAddedId] = useState<string | null>(null)
+  const justAddedTimer = useRef<number | undefined>(undefined)
+  const [cartCount, setCartCount] = useState(() => cart.count())
+
+  // Responsive: >1068px = 3 columnas · 735–1068px = esquema+detalle y productos debajo · ≤735px = 1 columna.
+  const isTabletDown = useMediaQuery('(max-width: 1068px)')
+  const isMobile = useMediaQuery('(max-width: 735px)')
+  const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
+  const layoutMode: 'desktop' | 'tablet' | 'mobile' = isMobile ? 'mobile' : isTabletDown ? 'tablet' : 'desktop'
+  const detailRef = useRef<HTMLElement | null>(null)
+  const pillBarRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     supabase
@@ -687,12 +756,40 @@ export default function ExhaustSchemasPage() {
   }, [])
 
   // Productos del marketplace para vincular a los componentes (sección "comprar").
+  // pro_price + professional_id hacen falta para el carrito (precio efectivo + vendedor).
   useEffect(() => {
+    let alive = true
     supabase
       .from('professional_products')
-      .select('id, product_name, price, images, category')
+      .select(`id, product_name, price, pro_price, images, category, stock, professional_id, ${SPEC_SELECT}`)
       .eq('is_active', true)
-      .then(({ data }) => setProducts((data ?? []) as MarketProduct[]))
+      .then(async ({ data, error }) => {
+        if (error) console.error(error)
+        if (!alive) return
+        const rows = (data ?? []) as MarketProduct[]
+        setProducts(rows)
+        setProductsLoaded(true)
+        // Nombre del vendedor para el carrito (mismo join en cliente que useMarketplaceStore).
+        // Best-effort: el facade solo devuelve perfiles propios a no-admins → suele quedar null.
+        try {
+          const withSeller = (await attachRelated(
+            rows.map((r) => ({ ...r })) as unknown as Record<string, unknown>[],
+            [{ table: 'user_profiles', fk: 'professional_id', as: 'seller', columns: 'id, full_name, company_name' }],
+          )) as unknown as MarketProduct[]
+          if (alive) setProducts(withSeller)
+        } catch { /* opcional */ }
+      })
+    return () => { alive = false }
+  }, [])
+
+  // Contador del carrito (para el enlace "Ver carrito" del despiece).
+  useEffect(() => {
+    const refresh = () => setCartCount(cart.count())
+    window.addEventListener('em_cart_changed', refresh)
+    return () => {
+      window.removeEventListener('em_cart_changed', refresh)
+      window.clearTimeout(justAddedTimer.current)
+    }
   }, [])
 
   const q = search.trim().toLowerCase()
@@ -739,11 +836,76 @@ export default function ExhaustSchemasPage() {
   }, [q, visibleBrands, selectedBrand])
 
   const car = schemas.find(s => s.id === selectedCarId) ?? filteredSchemas[0] ?? null
-  const component = car && selectedComponent ? car.components[selectedComponent] ?? null : null
+  const orderedComponents = useMemo(() => (car ? sortedComponents(car.components) : []), [car])
+  // Siempre hay un componente activo: el elegido por el usuario o, por defecto, el 1º del esquema
+  // (al cargar o cambiar de esquema). Así las 3 columnas nunca quedan vacías.
+  const activeIndex = Math.max(0, orderedComponents.findIndex((c) => c.id === selectedComponent))
+  const component: Component | null = orderedComponents[activeIndex] ?? null
+  const activeId = component?.id ?? null
   const componentProducts = useMemo(() => productsForComponent(component, products), [component, products])
+  // Producto equivalente por fila del despiece (exacto si el admin lo vinculó, si no por nombre).
+  // Sin el comodín de «sistemas completos»: una fila como «Aislante cerámico» no debe ofrecer
+  // un sistema entero de 2.450 € con botón de compra.
+  const despieceProducts = useMemo(
+    () =>
+      (car?.despiece ?? []).map((d) => {
+        const m = productsForComponent({ name: d.element, product_ids: d.product_ids }, products)
+        return m.generic ? null : m.list[0] ?? null
+      }),
+    [car, products],
+  )
+  const carUnlocked = !!car && canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin)
   // Gating por sección (el servidor ya recorta los datos; esto oculta secciones + evita huecos).
   const canOem = canSeeOem(profile?.user_type, profile?.is_admin)
   const canWs = canSeeWorkshopData(profile?.user_type, profile?.is_admin)
+
+  // Móvil: mantener visible la pill activa dentro de la barra con scroll horizontal
+  // (solo desplaza la barra, nunca la página).
+  useEffect(() => {
+    if (!isMobile || !activeId) return
+    const bar = pillBarRef.current
+    if (!bar) return
+    const pill = Array.from(bar.children).find(
+      (el) => (el as HTMLElement).dataset.pillId === activeId,
+    ) as HTMLElement | undefined
+    if (!pill) return
+    const left = pill.offsetLeft - (bar.clientWidth - pill.offsetWidth) / 2
+    bar.scrollTo({ left: Math.max(0, left), behavior: reduceMotion ? 'auto' : 'smooth' })
+  }, [activeId, isMobile, reduceMotion])
+
+  /** Selecciona un componente (pills, números del esquema, refs OEM). En móvil baja al detalle.
+   *  La sección de detalle siempre está montada y su posición no depende del componente elegido,
+   *  así que se puede desplazar ya (scrollMarginTop deja libre la nav + la barra de pills). */
+  function selectComponent(id: string) {
+    setSelectedComponent(id)
+    if (isMobile && carUnlocked) {
+      detailRef.current?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' })
+    }
+  }
+
+  /** Añadir al carrito: mismo cart.add y misma forma de CartItem que MarketplaceProductPage
+   *  (el servidor recalcula el precio real al crear el pedido; unit_price es solo para mostrar). */
+  function handleAddToCart(p: MarketProduct) {
+    const eff = effectivePrice({ price: p.price, pro_price: p.pro_price }, profile?.user_type, profile?.is_admin)
+    const result = cart.add({
+      product_type: 'professional_product',
+      product_id: p.id,
+      product_name: p.product_name ?? 'Producto',
+      unit_price: eff.price,
+      quantity: 1,
+      seller_id: p.professional_id ?? null,
+      seller_name: p.seller?.full_name ?? p.seller?.company_name ?? null,
+      image_url: p.images?.[0] ?? null,
+    })
+    if (!result.ok) {
+      toast.error(result.error ?? 'No se pudo añadir al carrito')
+      return
+    }
+    toast.success(`Añadido al carrito: ${p.product_name}`)
+    setJustAddedId(p.id)
+    window.clearTimeout(justAddedTimer.current)
+    justAddedTimer.current = window.setTimeout(() => setJustAddedId(null), 1800)
+  }
 
   function handleBrandSelect(brand: string) {
     setSelectedBrand(brand)
@@ -931,7 +1093,7 @@ export default function ExhaustSchemasPage() {
                       {car.brand} {car.model}
                       <TierBadge
                         allowedTiers={car.allowed_tiers ?? []}
-                        locked={!canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin)}
+                        locked={!carUnlocked}
                         size="sm"
                       />
                     </h2>
@@ -1019,7 +1181,7 @@ export default function ExhaustSchemasPage() {
             </div>
           )}
 
-          {!canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin) && (
+          {!carUnlocked && (
             <UpgradeCallout
               allowedTiers={car.allowed_tiers ?? []}
               isAuthenticated={!!user}
@@ -1028,279 +1190,455 @@ export default function ExhaustSchemasPage() {
             />
           )}
 
-          {/* Diagram + detail panel */}
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: component ? '1fr 340px' : '1fr',
-              gap: '16px',
-              alignItems: 'start',
-              position: 'relative',
-              ...(canViewTiers(car.allowed_tiers, profile?.user_type, profile?.is_admin)
-                ? {}
-                : { filter: 'blur(6px) saturate(0.5)', pointerEvents: 'none', userSelect: 'none', opacity: 0.55 }),
-            }}
-          >
-
-            {/* SVG Diagram */}
+          {/* Ficha del esquema (Cambio 5): pills arriba + 3 columnas en PC (esquema · detalles ·
+              productos), esquema+detalle con productos debajo en tablet vertical, y columna única
+              en móvil (pills sticky con scroll horizontal). Siempre hay un componente activo. */}
+          {orderedComponents.length === 0 ? (
             <div
               style={{
                 backgroundColor: '#FFFFFF',
                 border: '1px solid #F2F2F7',
-                borderRadius: '18px',
-                padding: '20px',
-                overflow: 'hidden',
+                borderRadius: 18,
+                padding: '40px 24px',
+                textAlign: 'center',
               }}
             >
-              {/* Diagrama clicable generado desde los componentes (vale para todas las
-                  arquitecturas y refleja los cambios de add/quitar/renombrar del panel). */}
-              <GenericDiagram components={car.components} selected={selectedComponent} onSelect={setSelectedComponent} color={car.color} />
-              <p style={{ fontSize: 11, color: '#C7C7CC', margin: '10px 0 0', textAlign: 'center' }}>
-                Toca un componente para ver su despiece, coste y fotos
+              <Layers size={22} style={{ color: '#C7C7CC', display: 'block', margin: '0 auto' }} />
+              <p style={{ fontSize: 15, fontWeight: 600, color: '#1D1D1F', margin: '10px 0 4px' }}>
+                Este esquema aún no tiene componentes
               </p>
-
-              {/* Component pills */}
-              <div style={{ marginTop: '16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {sortedComponents(car.components).map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => setSelectedComponent(c.id)}
-                    style={{
-                      padding: '4px 12px',
-                      borderRadius: '980px',
-                      fontSize: '12px',
-                      border: `1px solid ${selectedComponent === c.id ? car.color : '#E5E5EA'}`,
-                      cursor: 'pointer',
-                      backgroundColor: selectedComponent === c.id ? car.color : '#FFFFFF',
-                      color: selectedComponent === c.id ? '#FFFFFF' : '#6E6E73',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    {c.name}
-                  </button>
-                ))}
-              </div>
+              <p style={{ fontSize: 13, color: '#86868B', margin: 0, lineHeight: 1.5 }}>
+                Estamos documentando sus piezas. Vuelve pronto para explorar el sistema de escape pieza a pieza.
+              </p>
             </div>
-
-            {/* Detail Panel */}
-            {component && (
+          ) : (
+            <div
+              style={{
+                position: 'relative',
+                ...(carUnlocked
+                  ? {}
+                  : { filter: 'blur(6px) saturate(0.5)', pointerEvents: 'none', userSelect: 'none', opacity: 0.55 }),
+              }}
+            >
+              {/* Pills de componentes: fila completa encima de las columnas.
+                  En móvil: barra sticky (bajo la nav fija de 44px) con scroll horizontal, sin saltos de línea. */}
               <div
-                style={{
-                  backgroundColor: '#FFFFFF',
-                  border: `1px solid ${car.color}30`,
-                  borderRadius: '18px',
-                  overflow: 'hidden',
-                  position: 'sticky',
-                  top: '80px',
-                }}
+                ref={pillBarRef}
+                role="toolbar"
+                aria-label="Componentes del sistema"
+                className={isMobile ? 'schema-pills-scroll' : undefined}
+                style={
+                  isMobile
+                    ? {
+                        // sticky solo si el usuario puede usarla (bloqueado = borrosa y sin clics)
+                        position: carUnlocked ? 'sticky' : 'relative',
+                        top: carUnlocked ? 44 : undefined,
+                        zIndex: 20,
+                        display: 'flex',
+                        flexWrap: 'nowrap',
+                        gap: 6,
+                        overflowX: 'auto',
+                        WebkitOverflowScrolling: 'touch',
+                        // a sangre: compensa el padding lateral (22px) de .content-width
+                        margin: '0 -22px 12px',
+                        padding: '10px 22px',
+                        backgroundColor: 'rgba(255,255,255,0.94)',
+                        backdropFilter: 'saturate(180%) blur(20px)',
+                        WebkitBackdropFilter: 'saturate(180%) blur(20px)',
+                        borderBottom: '1px solid #F2F2F7',
+                      }
+                    : { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }
+                }
               >
-                <div
-                  style={{
-                    backgroundColor: car.color,
-                    padding: '16px 20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                  }}
-                >
-                  <p style={{ fontSize: '15px', fontWeight: 600, color: '#FFFFFF', margin: 0 }}>{component.name}</p>
-                  <button
-                    onClick={() => setSelectedComponent(null)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.8)', display: 'flex' }}
-                    aria-label="Cerrar"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-
-                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-                  {component.image_url && (
-                    <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid #F2F2F7', aspectRatio: '4 / 3', backgroundColor: '#F5F5F7' }}>
-                      <img src={component.image_url} alt={component.name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                    <span
+                {orderedComponents.map((c, i) => {
+                  const isSel = c.id === activeId
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      data-pill-id={c.id}
+                      onClick={() => selectComponent(c.id)}
+                      aria-pressed={isSel}
                       style={{
-                        fontSize: 10,
-                        fontWeight: 600,
-                        color: '#86868B',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.05em',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        flexShrink: 0,
+                        whiteSpace: 'nowrap',
+                        padding: isMobile ? '7px 14px 7px 7px' : '4px 12px 4px 5px',
+                        borderRadius: '980px',
+                        fontSize: isMobile ? 13 : 12,
+                        border: `1px solid ${isSel ? car.color : '#E5E5EA'}`,
+                        cursor: 'pointer',
+                        backgroundColor: isSel ? car.color : '#FFFFFF',
+                        color: isSel ? '#FFFFFF' : '#6E6E73',
+                        transition: 'all 0.15s ease',
                       }}
                     >
-                      Ficha técnica
-                    </span>
-                  </div>
-
-                  {/* Filas tipo "ficha de producto" */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-                    {component.oem_ref && (
-                      <FichaRow
-                        icon={<Hash size={13} style={{ color: '#86868B' }} />}
-                        label="Referencia OEM"
-                        value={component.oem_ref}
-                        mono
-                      />
-                    )}
-                    <FichaRow
-                      icon={<Layers size={13} style={{ color: '#0071E3' }} />}
-                      label="Material principal"
-                      value={component.material || '—'}
-                    />
-                    {component.diameter_mm != null && (
-                      <FichaRow
-                        icon={<Box size={13} style={{ color: '#86868B' }} />}
-                        label="Diámetro tubo"
-                        value={`${component.diameter_mm} mm`}
-                      />
-                    )}
-                    {component.thickness_mm != null && (
-                      <FichaRow
-                        icon={<Layers size={13} style={{ color: '#86868B' }} />}
-                        label="Espesor"
-                        value={`${component.thickness_mm} mm`}
-                      />
-                    )}
-                    {component.fabrication_hours != null && (
-                      <FichaRow
-                        icon={<Clock size={13} style={{ color: '#FF9500' }} />}
-                        label="Tiempo fabricación"
-                        value={`${component.fabrication_hours} h`}
-                      />
-                    )}
-                    {component.material_cost != null && (
-                      <FichaRow
-                        icon={<Euro size={13} style={{ color: '#86868B' }} />}
-                        label="Coste material"
-                        value={`${component.material_cost} €`}
-                      />
-                    )}
-                    {component.total_cost != null && (
-                      <div
+                      <span
                         style={{
-                          padding: '12px 0',
-                          borderTop: '1px solid #F2F2F7',
-                          marginTop: 4,
-                          display: 'flex',
-                          justifyContent: 'space-between',
+                          minWidth: 18,
+                          height: 18,
+                          padding: '0 4px',
+                          boxSizing: 'border-box',
+                          borderRadius: 9,
+                          display: 'inline-flex',
                           alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 10,
+                          fontWeight: 700,
+                          backgroundColor: isSel ? 'rgba(255,255,255,0.25)' : '#F2F2F7',
+                          color: isSel ? '#FFFFFF' : '#86868B',
                         }}
                       >
-                        <span style={{ fontSize: 12, color: '#86868B' }}>Coste total estimado</span>
-                        <span style={{ fontSize: 22, fontWeight: 700, color: car.color, letterSpacing: '-0.01em' }}>
-                          {component.total_cost} €
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                        {i + 1}
+                      </span>
+                      {c.name}
+                    </button>
+                  )
+                })}
+              </div>
 
-                  {component.description && (
-                    <p style={{ fontSize: 13, lineHeight: 1.6, color: '#3A3A3C', margin: 0 }}>
-                      {component.description}
-                    </p>
-                  )}
+              {/* PC: 3 columnas · tablet vertical: esquema + detalle, productos a todo el ancho · móvil: 1 columna */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns:
+                    layoutMode === 'desktop'
+                      ? 'minmax(0, 0.9fr) minmax(0, 1.15fr) minmax(0, 0.95fr)'
+                      : layoutMode === 'tablet'
+                        ? 'minmax(0, 1fr) minmax(0, 1.2fr)'
+                        : 'minmax(0, 1fr)',
+                  gap: 16,
+                }}
+              >
+                {/* COL 1 — Esquema del sistema */}
+                <section style={colCard}>
+                  <p style={colLabel}>Esquema del sistema</p>
+                  {/* Diagrama clicable generado desde los componentes (vale para todas las
+                      arquitecturas y refleja los cambios de add/quitar/renombrar del panel). */}
+                  <GenericDiagram components={car.components} selected={activeId} onSelect={selectComponent} color={car.color} />
+                  <p style={{ fontSize: 11, color: '#86868B', margin: '12px 0 0', textAlign: 'center', lineHeight: 1.45 }}>
+                    Vista motor → salida. Los números son clicables, igual que las pills de arriba.
+                  </p>
+                </section>
 
-                  {component.tip && (
-                    <div
-                      style={{
-                        backgroundColor: `${car.color}0D`,
-                        border: `1px solid ${car.color}25`,
-                        borderRadius: '10px',
-                        padding: '12px',
-                      }}
-                    >
-                      <p style={{ fontSize: '11px', fontWeight: 600, color: car.color, margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        Dato técnico
-                      </p>
-                      <p style={{ fontSize: '12px', color: '#1D1D1F', margin: 0, lineHeight: 1.5 }}>{component.tip}</p>
+                {/* COL 2 — Detalles del componente activo */}
+                {component && (
+                  <section
+                    ref={detailRef}
+                    style={{
+                      ...colCard,
+                      border: `1px solid ${car.color}30`,
+                      // al hacer scroll automático en móvil, que no quede bajo la nav + la barra de pills
+                      scrollMarginTop: isMobile ? 112 : 80,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                      <p style={{ ...colLabel, margin: 0 }}>Detalles</p>
+                      <span style={{ fontSize: 11, color: '#C7C7CC', fontWeight: 500 }}>
+                        {activeIndex + 1} / {orderedComponents.length}
+                      </span>
                     </div>
-                  )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                      <span
+                        style={{
+                          width: 26,
+                          height: 26,
+                          borderRadius: '50%',
+                          flexShrink: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 12,
+                          fontWeight: 700,
+                          backgroundColor: car.color,
+                          color: '#FFFFFF',
+                        }}
+                      >
+                        {activeIndex + 1}
+                      </span>
+                      <h3 style={{ fontSize: 17, fontWeight: 600, color: '#1D1D1F', margin: 0, letterSpacing: '-0.01em', lineHeight: 1.25, minWidth: 0 }}>
+                        {component.name}
+                      </h3>
+                    </div>
 
-                  {componentProducts.list.length > 0 && (
-                    <div style={{ borderTop: '1px solid #F2F2F7', paddingTop: '14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '0 0 10px', flexWrap: 'wrap' }}>
-                        <ShoppingBag size={14} style={{ color: car.color }} />
-                        <span style={{ fontSize: '11px', color: '#86868B', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-                          {componentProducts.exact
-                            ? `Recambio compatible: ${component.name}`
-                            : componentProducts.generic
-                              ? 'Sistemas compatibles en el marketplace'
-                              : `Comprar: ${component.name}`}
-                        </span>
-                        {componentProducts.exact && (
-                          <span style={{ fontSize: 9, fontWeight: 700, color: '#1f7a4d', background: '#1f7a4d18', padding: '1px 6px', borderRadius: 4, letterSpacing: '0.04em' }}>PLUG &amp; PLAY</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      {/* Foto real de la pieza (o hueco neutro mientras no haya) */}
+                      {component.image_url ? (
+                        <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid #F2F2F7', aspectRatio: '4 / 3', backgroundColor: '#F5F5F7' }}>
+                          <img key={component.id} src={component.image_url} alt={component.name}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            borderRadius: 12,
+                            border: '1px dashed #D2D2D7',
+                            aspectRatio: '4 / 3',
+                            backgroundColor: '#F5F5F7',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            color: '#86868B',
+                          }}
+                        >
+                          <Camera size={20} style={{ color: '#C7C7CC' }} />
+                          <span style={{ fontSize: 12 }}>Foto real de la pieza</span>
+                        </div>
+                      )}
+
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          color: '#86868B',
+                          textTransform: 'uppercase',
+                          letterSpacing: '0.05em',
+                        }}
+                      >
+                        Ficha técnica
+                      </span>
+
+                      {/* Filas tipo "ficha de producto" (el servidor ya recorta los campos por tier) */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                        {component.oem_ref && (
+                          <FichaRow
+                            icon={<Hash size={13} style={{ color: '#86868B' }} />}
+                            label="Referencia OEM"
+                            value={component.oem_ref}
+                            mono
+                          />
+                        )}
+                        <FichaRow
+                          icon={<Layers size={13} style={{ color: '#0071E3' }} />}
+                          label="Material principal"
+                          value={component.material || '—'}
+                        />
+                        {component.diameter_mm != null && (
+                          <FichaRow
+                            icon={<Box size={13} style={{ color: '#86868B' }} />}
+                            label="Diámetro tubo"
+                            value={`${component.diameter_mm} mm`}
+                          />
+                        )}
+                        {component.thickness_mm != null && (
+                          <FichaRow
+                            icon={<Layers size={13} style={{ color: '#86868B' }} />}
+                            label="Espesor"
+                            value={`${component.thickness_mm} mm`}
+                          />
+                        )}
+                        {component.fabrication_hours != null && (
+                          <FichaRow
+                            icon={<Clock size={13} style={{ color: '#FF9500' }} />}
+                            label="Tiempo fabricación"
+                            value={`${component.fabrication_hours} h`}
+                          />
+                        )}
+                        {component.material_cost != null && (
+                          <FichaRow
+                            icon={<Euro size={13} style={{ color: '#86868B' }} />}
+                            label="Coste material"
+                            value={`${component.material_cost} €`}
+                          />
+                        )}
+                        {component.total_cost != null && (
+                          <div
+                            style={{
+                              padding: '12px 0',
+                              borderTop: '1px solid #F2F2F7',
+                              marginTop: 4,
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <span style={{ fontSize: 12, color: '#86868B' }}>Coste total estimado</span>
+                            <span style={{ fontSize: 22, fontWeight: 700, color: car.color, letterSpacing: '-0.01em' }}>
+                              {component.total_cost} €
+                            </span>
+                          </div>
                         )}
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        {componentProducts.list.slice(0, 5).map((p) => (
-                          <Link
-                            key={p.id}
-                            to={`/marketplace/product/${p.id}`}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 10, padding: '8px',
-                              borderRadius: 10, border: '1px solid #F2F2F7', textDecoration: 'none',
-                              background: '#FFFFFF', transition: 'border-color .15s ease',
-                            }}
-                            onMouseEnter={(e) => { e.currentTarget.style.borderColor = car.color }}
-                            onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#F2F2F7' }}
-                          >
-                            <div style={{ width: 44, height: 44, borderRadius: 8, background: '#F5F5F7', flexShrink: 0, overflow: 'hidden' }}>
-                              {Array.isArray(p.images) && p.images[0] && (
-                                <img src={p.images[0]} alt={p.product_name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
-                              )}
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: 13, fontWeight: 600, color: '#1D1D1F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.product_name}</div>
-                              {p.price != null && <div style={{ fontSize: 12, color: car.color, fontWeight: 700 }}>{p.price} €</div>}
-                            </div>
-                            <ChevronRight size={15} style={{ color: '#C7C7CC', flexShrink: 0 }} />
-                          </Link>
-                        ))}
-                      </div>
-                      <Link to="/marketplace" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 10, fontSize: 12, fontWeight: 600, color: car.color, textDecoration: 'none' }}>
-                        Ver todo el marketplace <ChevronRight size={13} />
-                      </Link>
-                    </div>
-                  )}
 
-                  <div style={{ borderTop: '1px solid #F2F2F7', paddingTop: '12px' }}>
-                    <p style={{ fontSize: '11px', color: '#86868B', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Otros componentes</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      {Object.values(car.components).filter(c => c.id !== component.id).map(c => (
-                        <button
-                          key={c.id}
-                          onClick={() => setSelectedComponent(c.id)}
+                      {component.description && (
+                        <p style={{ fontSize: 13, lineHeight: 1.6, color: '#3A3A3C', margin: 0 }}>
+                          {component.description}
+                        </p>
+                      )}
+
+                      {/* Consejo: caja destacada al final del detalle */}
+                      {component.tip && (
+                        <div
                           style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            padding: '8px 10px',
-                            borderRadius: '8px',
-                            border: 'none',
-                            cursor: 'pointer',
-                            backgroundColor: 'transparent',
-                            textAlign: 'left',
-                            transition: 'background 0.15s ease',
+                            backgroundColor: `${car.color}0D`,
+                            border: `1px solid ${car.color}25`,
+                            borderRadius: 12,
+                            padding: '12px 14px',
                           }}
-                          onMouseEnter={e => { e.currentTarget.style.backgroundColor = '#F5F5F7' }}
-                          onMouseLeave={e => { e.currentTarget.style.backgroundColor = 'transparent' }}
                         >
-                          <span style={{ fontSize: '13px', color: '#1D1D1F' }}>{c.name}</span>
-                          <ChevronRight size={14} style={{ color: '#C7C7CC', flexShrink: 0 }} />
-                        </button>
-                      ))}
+                          <p style={{ fontSize: '11px', fontWeight: 600, color: car.color, margin: '0 0 4px', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center', gap: 5 }}>
+                            <Lightbulb size={12} />
+                            Consejo
+                          </p>
+                          <p style={{ fontSize: '12px', color: '#1D1D1F', margin: 0, lineHeight: 1.5 }}>{component.tip}</p>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+                  </section>
+                )}
 
-          {!component && (
-            <div style={{ textAlign: 'center', marginTop: '20px', padding: '24px', color: '#86868B', fontSize: '14px' }}>
-              Toca un componente en el esquema o en las pills para ver sus detalles técnicos
+                {/* COL 3 — Productos compatibles (en tablet vertical ocupa todo el ancho, debajo) */}
+                {component && (
+                  <section style={{ ...colCard, ...(layoutMode === 'tablet' ? { gridColumn: '1 / -1' } : {}) }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+                      <p style={{ ...colLabel, margin: 0 }}>Productos compatibles</p>
+                      {componentProducts.exact && (
+                        <span style={{ fontSize: 9, fontWeight: 700, color: '#1f7a4d', background: '#1f7a4d18', padding: '1px 6px', borderRadius: 4, letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                          PLUG &amp; PLAY
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 12, color: '#86868B', margin: '0 0 12px', lineHeight: 1.4 }}>
+                      Vinculados a «{component.name}» en el marketplace
+                    </p>
+
+                    {!productsLoaded ? (
+                      <p style={{ fontSize: 12, color: '#C7C7CC', margin: 0 }}>Cargando productos…</p>
+                    ) : componentProducts.list.length === 0 ? (
+                      <div
+                        style={{
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          gap: 8,
+                          textAlign: 'center',
+                          padding: '22px 12px',
+                          borderRadius: 14,
+                          border: '1px dashed #E5E5EA',
+                          backgroundColor: '#FAFAFA',
+                        }}
+                      >
+                        <ShoppingBag size={18} style={{ color: '#C7C7CC' }} />
+                        <p style={{ fontSize: 12, color: '#86868B', margin: 0, lineHeight: 1.45 }}>
+                          Aún no hay productos vinculados a esta pieza.
+                        </p>
+                        <Link to="/marketplace" style={{ fontSize: 12, fontWeight: 600, color: '#0071E3', textDecoration: 'none' }}>
+                          Explorar el marketplace ›
+                        </Link>
+                      </div>
+                    ) : (
+                      <>
+                        {componentProducts.generic && (
+                          <p style={{ fontSize: 12, color: '#6E6E73', backgroundColor: '#F5F5F7', borderRadius: 10, padding: '8px 10px', margin: '0 0 10px', lineHeight: 1.45 }}>
+                            Sin recambio específico para esta pieza: te mostramos productos genéricos y sistemas completos compatibles.
+                          </p>
+                        )}
+                        <div
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns:
+                              layoutMode === 'desktop' ? 'minmax(0, 1fr)' : 'repeat(auto-fill, minmax(min(240px, 100%), 1fr))',
+                            gap: 8,
+                          }}
+                        >
+                          {componentProducts.list.slice(0, 5).map((p) => {
+                            const eff = effectivePrice({ price: p.price, pro_price: p.pro_price }, profile?.user_type, profile?.is_admin)
+                            const st = stockInfo(p)
+                            return (
+                              <Link
+                                key={p.id}
+                                to={`/marketplace/product/${p.id}`}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'flex-start',
+                                  gap: 12,
+                                  padding: 10,
+                                  minWidth: 0,
+                                  borderRadius: 14,
+                                  border: '1px solid #F2F2F7',
+                                  textDecoration: 'none',
+                                  backgroundColor: '#FFFFFF',
+                                  transition: 'border-color .15s ease',
+                                }}
+                                onMouseEnter={(e) => { e.currentTarget.style.borderColor = car.color }}
+                                onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#F2F2F7' }}
+                              >
+                                <div
+                                  style={{
+                                    width: 64,
+                                    height: 64,
+                                    borderRadius: 10,
+                                    backgroundColor: '#F5F5F7',
+                                    flexShrink: 0,
+                                    overflow: 'hidden',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                  }}
+                                >
+                                  {Array.isArray(p.images) && p.images[0] ? (
+                                    <img src={p.images[0]} alt={p.product_name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} loading="lazy" />
+                                  ) : (
+                                    <ShoppingBag size={18} style={{ color: '#C7C7CC' }} />
+                                  )}
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                  <span
+                                    style={{
+                                      fontSize: 13,
+                                      fontWeight: 600,
+                                      color: '#1D1D1F',
+                                      lineHeight: 1.3,
+                                      display: '-webkit-box',
+                                      WebkitLineClamp: 2,
+                                      WebkitBoxOrient: 'vertical',
+                                      overflow: 'hidden',
+                                    }}
+                                  >
+                                    {p.product_name}
+                                  </span>
+                                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+                                    {eff.price > 0 ? (
+                                      <span style={{ fontSize: 15, fontWeight: 700, color: '#D70015', letterSpacing: '-0.01em' }}>{fmtEur(eff.price)}</span>
+                                    ) : (
+                                      <span style={{ fontSize: 13, fontWeight: 600, color: '#86868B' }}>Consultar precio</span>
+                                    )}
+                                    {eff.isPro && (
+                                      <>
+                                        <span style={{ fontSize: 11, color: '#86868B', textDecoration: 'line-through' }}>{fmtEur(eff.base)}</span>
+                                        <span style={{ fontSize: 9, fontWeight: 700, color: '#0071E3', backgroundColor: '#0071E320', padding: '1px 5px', borderRadius: 4 }}>PRO</span>
+                                      </>
+                                    )}
+                                  </span>
+                                  {specSummary(p) && (
+                                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#3A3A3C' }} title="Medidas">
+                                      <Ruler size={11} style={{ color: '#86868B', flexShrink: 0 }} /> {specSummary(p)}
+                                    </span>
+                                  )}
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: '#6E6E73' }}>
+                                    <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, backgroundColor: st.ok ? '#34C759' : '#FF3B30' }} />
+                                    {st.label}
+                                  </span>
+                                  <span style={{ fontSize: 12, fontWeight: 600, color: '#0071E3', marginTop: 2 }}>
+                                    Ver en marketplace ›
+                                  </span>
+                                </div>
+                              </Link>
+                            )
+                          })}
+                        </div>
+                        <Link to="/marketplace" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginTop: 12, fontSize: 12, fontWeight: 600, color: '#0071E3', textDecoration: 'none' }}>
+                          Ver todo el marketplace <ChevronRight size={13} />
+                        </Link>
+                      </>
+                    )}
+                  </section>
+                )}
+              </div>
             </div>
           )}
 
@@ -1309,19 +1647,21 @@ export default function ExhaustSchemasPage() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'repeat(auto-fit, minmax(380px, 1fr))',
+                // min(380px, 100%): en móvil (<380px útiles) la columna no desborda la pantalla
+                gridTemplateColumns: 'repeat(auto-fit, minmax(min(380px, 100%), 1fr))',
                 gap: 16,
                 marginTop: 24,
               }}
             >
-              {/* A. Despiece */}
+              {/* A. Despiece — a todo el ancho: 6 columnas + "Añadir al carrito" no caben en media fila */}
               {canWs && car.despiece && car.despiece.length > 0 && (
-                <DossierSection title="A. Despiece / Material necesario">
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <DossierSection title="A. Despiece / Material necesario" style={{ gridColumn: '1 / -1' }}>
+                  {/* La tabla hace scroll horizontal dentro de su contenedor en pantallas estrechas */}
+                  <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                    <table style={{ width: '100%', minWidth: 560, borderCollapse: 'collapse', fontSize: 12 }}>
                       <thead>
                         <tr>
-                          {['Elemento', 'Material', 'Especif.', 'Cantidad', 'Proceso'].map((h) => (
+                          {['Elemento', 'Material', 'Especif.', 'Cantidad', 'Proceso', 'Marketplace'].map((h) => (
                             <th
                               key={h}
                               style={{
@@ -1341,18 +1681,60 @@ export default function ExhaustSchemasPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {car.despiece.map((d, i) => (
-                          <tr key={i}>
-                            <td style={tdStyle}>{d.element}</td>
-                            <td style={tdStyle}>{d.material}</td>
-                            <td style={tdStyle}>{d.specification}</td>
-                            <td style={tdStyle}>{d.quantity}</td>
-                            <td style={tdStyle}>{d.process}</td>
-                          </tr>
-                        ))}
+                        {car.despiece.map((d, i) => {
+                          // Producto equivalente del marketplace (exacto si el admin lo vinculó,
+                          // si no por nombre del elemento). Requisito PDF: precio + stock por fila.
+                          const p = despieceProducts[i] ?? null
+                          const st = p ? stockInfo(p) : null
+                          const eff = p ? effectivePrice({ price: p.price, pro_price: p.pro_price }, profile?.user_type, profile?.is_admin) : null
+                          const added = !!p && justAddedId === p.id
+                          return (
+                            <tr key={i}>
+                              <td style={tdStyle}>{d.element}</td>
+                              <td style={tdStyle}>{d.material}</td>
+                              <td style={tdStyle}>{d.specification}</td>
+                              <td style={tdStyle}>{d.quantity}</td>
+                              <td style={tdStyle}>{d.process}</td>
+                              <td style={tdStyle}>
+                                {p && st && eff ? (
+                                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 6 }}>
+                                    <Link to={`/marketplace/product/${p.id}`} style={{ color: '#0071E3', textDecoration: 'none', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                                      Ver{p.price != null ? ` · ${eff.price > 0 ? fmtEur(eff.price) : 'consultar'}` : ''}
+                                      <span style={{ color: '#86868B', fontWeight: 400 }}> · {st.label.toLowerCase()}</span>
+                                    </Link>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddToCart(p)}
+                                      disabled={!st.ok}
+                                      title={st.ok ? `Añadir «${p.product_name}» al carrito` : 'Sin stock'}
+                                      style={addCartBtnStyle(st.ok, added)}
+                                    >
+                                      <ShoppingCart size={12} />
+                                      {added ? 'Añadido' : 'Añadir al carrito'}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span style={{ color: '#C7C7CC' }}>—</span>
+                                )}
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
+                  {cartCount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                      <Link
+                        to="/marketplace/carrito"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: '#0071E3', textDecoration: 'none' }}
+                      >
+                        <ShoppingCart size={13} />
+                        Ver carrito ({cartCount})
+                        <ChevronRight size={13} />
+                      </Link>
+                    </div>
+                  )}
                 </DossierSection>
               )}
 
@@ -1364,15 +1746,16 @@ export default function ExhaustSchemasPage() {
               )}
 
               {/* C. Referencias OEM por componente */}
-              {canOem && Object.values(car.components).some((c) => c.oem_ref) && (
+              {canOem && Object.values(car.components ?? {}).some((c) => c.oem_ref) && (
                 <DossierSection title="C. Referencias OEM por componente">
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {Object.values(car.components)
+                    {Object.values(car.components ?? {})
                       .filter((c) => c.oem_ref)
                       .map((c) => (
                         <button
                           key={c.id}
-                          onClick={() => setSelectedComponent(c.id)}
+                          type="button"
+                          onClick={() => selectComponent(c.id)}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -1381,15 +1764,15 @@ export default function ExhaustSchemasPage() {
                             borderRadius: 8,
                             border: 'none',
                             cursor: 'pointer',
-                            backgroundColor: selectedComponent === c.id ? `${car.color}10` : 'transparent',
+                            backgroundColor: activeId === c.id ? `${car.color}10` : 'transparent',
                             textAlign: 'left',
                             transition: 'background 0.15s ease',
                           }}
                           onMouseEnter={(e) => {
-                            if (selectedComponent !== c.id) e.currentTarget.style.backgroundColor = '#F5F5F7'
+                            if (activeId !== c.id) e.currentTarget.style.backgroundColor = '#F5F5F7'
                           }}
                           onMouseLeave={(e) => {
-                            if (selectedComponent !== c.id) e.currentTarget.style.backgroundColor = 'transparent'
+                            if (activeId !== c.id) e.currentTarget.style.backgroundColor = 'transparent'
                           }}
                         >
                           <span style={{ fontSize: 12, color: '#1D1D1F' }}>{c.name}</span>
@@ -1397,7 +1780,7 @@ export default function ExhaustSchemasPage() {
                             style={{
                               fontSize: 11,
                               fontFamily: 'ui-monospace, monospace',
-                              color: selectedComponent === c.id ? car.color : '#86868B',
+                              color: activeId === c.id ? car.color : '#86868B',
                               fontWeight: 600,
                             }}
                           >
@@ -1457,6 +1840,7 @@ export default function ExhaustSchemasPage() {
           <SchemaRelatedPanel
             schemaId={car.id}
             schemaBrand={car.brand}
+            schemaModel={car.model}
             schemaLayout={car.layout}
           />
         </>
@@ -1499,13 +1883,51 @@ const tdStyle: React.CSSProperties = {
   verticalAlign: 'top',
 }
 
+/** Tarjeta de cada columna de la ficha (esquema · detalles · productos). */
+const colCard: React.CSSProperties = {
+  backgroundColor: '#FFFFFF',
+  border: '1px solid #F2F2F7',
+  borderRadius: 18,
+  padding: 18,
+  minWidth: 0,
+}
+const colLabel: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
+  color: '#86868B',
+  textTransform: 'uppercase',
+  letterSpacing: '0.06em',
+  margin: '0 0 12px',
+}
+
+/** Botón compacto "Añadir al carrito" del despiece (deshabilitado sin stock; verde un instante al añadir). */
+function addCartBtnStyle(enabled: boolean, added: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 5,
+    padding: '5px 10px',
+    borderRadius: 8,
+    border: 'none',
+    fontSize: 11,
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+    cursor: enabled ? 'pointer' : 'not-allowed',
+    backgroundColor: !enabled ? '#F2F2F7' : added ? '#34C75920' : '#0071E314',
+    color: !enabled ? '#C7C7CC' : added ? '#1f7a4d' : '#0071E3',
+    transition: 'background-color .15s ease, color .15s ease',
+  }
+}
+
 function DossierSection({
   title,
   icon,
+  style,
   children,
 }: {
   title: string
   icon?: React.ReactNode
+  style?: React.CSSProperties
   children: React.ReactNode
 }) {
   return (
@@ -1515,6 +1937,8 @@ function DossierSection({
         border: '1px solid #F2F2F7',
         borderRadius: 16,
         padding: 18,
+        minWidth: 0,
+        ...style,
       }}
     >
       <h3

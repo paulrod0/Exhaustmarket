@@ -31,10 +31,20 @@ interface Part {
   is_active?: boolean
   confidence: string
   source_url?: string | null
+  source_url_2?: string | null
+  verification_status?: string | null
+  variant?: string | null
   notes?: string | null
   qa_issues?: string | null
   status: string
 }
+
+// Independiente de la confianza: «verificado» = dos fuentes que coinciden (Fuente 1 + Fuente 2).
+const VERIFICATION = [
+  { value: 'candidato', label: 'Candidato (pendiente 2ª fuente)' },
+  { value: 'verificado', label: 'Verificado (2 fuentes coinciden)' },
+  { value: 'descatalogado', label: 'Descatalogado' },
+]
 
 interface DiagramOpt {
   id: string
@@ -56,6 +66,7 @@ export default function AdminPartEditorPage() {
     images: [],
     is_active: true,
     confidence: 'media',
+    verification_status: 'candidato',
     status: 'draft',
   })
   const [diagrams, setDiagrams] = useState<DiagramOpt[]>([])
@@ -170,6 +181,7 @@ export default function AdminPartEditorPage() {
           </label>
         </div>
         <Field label="Posición en esquema (nº)" type="number" value={part.position_number?.toString() ?? ''} onChange={(v) => setPart({ ...part, position_number: v ? parseInt(v) : null })} />
+        <Field label="Condición / variante" value={part.variant ?? ''} onChange={(v) => setPart({ ...part, variant: v || null })} placeholder="p. ej. hasta 11/2016, DSG, Euro 6" />
         <div style={fieldGroupStyle}>
           <label style={labelStyle}>Visible en el mapa</label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
@@ -227,7 +239,10 @@ export default function AdminPartEditorPage() {
 
       <h2 style={sectionTitleStyle}>Validación</h2>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <Field label="Fuente (URL)" value={part.source_url ?? ''} onChange={(v) => setPart({ ...part, source_url: v })} placeholder="https://catalogo.example.com/…" />
+        <Field label="Fuente 1 (URL)" value={part.source_url ?? ''} onChange={(v) => setPart({ ...part, source_url: v || null })} placeholder="https://catalogo.example.com/…" />
+        <Field label="Fuente 2 (URL)" value={part.source_url_2 ?? ''} onChange={(v) => setPart({ ...part, source_url_2: v || null })} placeholder="Segunda fuente que confirme el dato" />
+        <Field label="Estado de verificación" value={part.verification_status ?? 'candidato'}
+          options={VERIFICATION.map((x) => ({ value: x.value, label: x.label }))} onChange={(v) => setPart({ ...part, verification_status: v })} isSelect />
         <Field label="Confianza *" value={part.confidence} options={CONFIDENCE.map(c => ({ value: c.value, label: c.label }))} onChange={(v) => setPart({ ...part, confidence: v })} isSelect />
         <Field label="Estado QA" value={part.status} options={QA_STATES.map(s => ({ value: s.value, label: s.label }))} onChange={(v) => setPart({ ...part, status: v })} isSelect />
       </div>

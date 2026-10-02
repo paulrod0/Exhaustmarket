@@ -5,7 +5,34 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- src/ api/ public/ index.html package.json package-lock.json vite.config.ts tsconfig.json tsconfig.node.json vercel.json",
+  "functions": {
+    "api/csv.ts": { "maxDuration": 300 },
+    "api/review.ts": { "maxDuration": 60 },
+    "api/v1.ts": { "maxDuration": 60 },
+    "api/quotes.ts": { "maxDuration": 30 }
+  },
+  "crons": [
+    { "path": "/api/cron/export", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/webhooks", "schedule": "* * * * *" },
+    { "path": "/api/cron/visits", "schedule": "5 * * * *" }
+  ],
   "rewrites": [
+    {
+      "source": "/api/cron/export",
+      "destination": "/api/csv?op=cron_export"
+    },
+    {
+      "source": "/api/cron/webhooks",
+      "destination": "/api/v1?path=_cron/webhooks"
+    },
+    {
+      "source": "/api/cron/visits",
+      "destination": "/api/quotes?op=cron_reminders"
+    },
+    {
+      "source": "/api/v1/(.*)",
+      "destination": "/api/v1?path=$1"
+    },
     {
       "source": "/api/img/(.*)",
       "destination": "/api/img?key=$1"

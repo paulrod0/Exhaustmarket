@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Plus, X, Loader2, BookOpen, Search } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { toast } from '../../lib/toast'
+import LinkScopeToggle from './LinkScopeToggle'
 import {
   ARTICLE_CATEGORY_LABEL,
   SCHEMA_ARTICLE_KIND_LABEL,
@@ -217,6 +218,8 @@ export default function SchemaArticleLinksPicker({ mode }: Props) {
                     {SCHEMA_ARTICLE_KIND_LABEL[l.kind]}
                   </div>
                 </div>
+                <LinkScopeToggle table="schema_article_links" linkId={l.id} scope={(l as any).scope}
+                  onChange={(s) => setLinks((prev) => prev.map((x) => (x.id === l.id ? ({ ...x, scope: s } as LinkWithArticle) : x)))} />
                 <button
                   type="button"
                   onClick={() => removeLink(l)}

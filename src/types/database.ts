@@ -35,6 +35,7 @@ export interface Database {
           longitude: number | null
           is_verified: boolean
           is_admin: boolean
+          is_collaborator: boolean
           created_at: string
           updated_at: string
         }
@@ -51,6 +52,7 @@ export interface Database {
           longitude?: number | null
           is_verified?: boolean
           is_admin?: boolean
+          is_collaborator?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -67,6 +69,7 @@ export interface Database {
           longitude?: number | null
           is_verified?: boolean
           is_admin?: boolean
+          is_collaborator?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -193,6 +196,18 @@ export interface Database {
           external_ref: string | null
           source: string | null
           last_synced_at: string | null
+          spec_inlet_mm: number | null
+          spec_outlet_mm: number | null
+          spec_outlet_count: number | null
+          spec_section: string | null
+          spec_body_diameter_mm: number | null
+          spec_body_width_mm: number | null
+          spec_body_height_mm: number | null
+          spec_length_mm: number | null
+          spec_total_length_mm: number | null
+          spec_volume_l: number | null
+          spec_material: string | null
+          spec_muffler_type: string | null
         }
         Insert: {
           id?: string
@@ -210,6 +225,18 @@ export interface Database {
           external_ref?: string | null
           source?: string | null
           last_synced_at?: string | null
+          spec_inlet_mm?: number | null
+          spec_outlet_mm?: number | null
+          spec_outlet_count?: number | null
+          spec_section?: string | null
+          spec_body_diameter_mm?: number | null
+          spec_body_width_mm?: number | null
+          spec_body_height_mm?: number | null
+          spec_length_mm?: number | null
+          spec_total_length_mm?: number | null
+          spec_volume_l?: number | null
+          spec_material?: string | null
+          spec_muffler_type?: string | null
         }
         Update: {
           id?: string
@@ -227,6 +254,18 @@ export interface Database {
           external_ref?: string | null
           source?: string | null
           last_synced_at?: string | null
+          spec_inlet_mm?: number | null
+          spec_outlet_mm?: number | null
+          spec_outlet_count?: number | null
+          spec_section?: string | null
+          spec_body_diameter_mm?: number | null
+          spec_body_width_mm?: number | null
+          spec_body_height_mm?: number | null
+          spec_length_mm?: number | null
+          spec_total_length_mm?: number | null
+          spec_volume_l?: number | null
+          spec_material?: string | null
+          spec_muffler_type?: string | null
         }
       }
       design_3d: {
@@ -236,10 +275,16 @@ export interface Database {
           title: string
           description: string | null
           file_url: string
+          files: Json | null
           thumbnail_url: string | null
+          part_type: string | null
+          status: string | null
+          reviewed_by: string | null
+          reviewed_at: string | null
           file_size: number | null
           is_public: boolean
           created_at: string
+          processing_status: string
         }
         Insert: {
           id?: string
@@ -247,10 +292,16 @@ export interface Database {
           title: string
           description?: string | null
           file_url: string
+          files?: Json | null
           thumbnail_url?: string | null
+          part_type?: string | null
+          status?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
           file_size?: number | null
           is_public?: boolean
           created_at?: string
+          processing_status?: string
         }
         Update: {
           id?: string
@@ -258,10 +309,16 @@ export interface Database {
           title?: string
           description?: string | null
           file_url?: string
+          files?: Json | null
           thumbnail_url?: string | null
+          part_type?: string | null
+          status?: string | null
+          reviewed_by?: string | null
+          reviewed_at?: string | null
           file_size?: number | null
           is_public?: boolean
           created_at?: string
+          processing_status?: string
         }
       }
       quote_requests: {

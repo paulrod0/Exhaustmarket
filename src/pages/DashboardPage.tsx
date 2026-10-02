@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '../stores/authStore';
 import { usePanelStore } from '../stores/panelStore';
 import { useQuoteStore } from '../stores/quoteStore';
+import { STATUS_META, statusLabel } from '../lib/quotesApi';
 import { Link } from 'react-router-dom';
 import {
   Package,
@@ -647,8 +648,8 @@ function ProDashboard({ profile }: { profile: any }) {
                   </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span className={getStatusBadgeClass(req.status)}>
-                    {getStatusLabel(req.status)}
+                  <span className={`badge badge-${STATUS_META[req.status]?.tone ?? 'gray'}`}>
+                    {statusLabel(req.status, 'workshop')}
                   </span>
                   <span style={{ fontSize: 13, color: 'var(--color-tertiary)' }}>
                     {formatDate(req.created_at)}
@@ -1028,8 +1029,8 @@ function DefaultDashboard({ profile }: { profile: any }) {
                     </p>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                    <span className={getStatusBadgeClass(req.status)}>
-                      {getStatusLabel(req.status)}
+                    <span className={`badge badge-${STATUS_META[req.status]?.tone ?? 'gray'}`}>
+                      {statusLabel(req.status, 'client')}
                     </span>
                     <span style={{ fontSize: 13, color: 'var(--color-tertiary)' }}>
                       {formatDate(req.created_at)}

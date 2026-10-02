@@ -43,6 +43,12 @@ import AdminAftermarketProductEditorPage from './pages/admin/AdminAftermarketPro
 import AdminQAPanelPage from './pages/admin/AdminQAPanelPage'
 import AdminKycReviewPage from './pages/admin/AdminKycReviewPage'
 import CompatibilidadPage from './pages/CompatibilidadPage'
+import CollaboratorFormPage from './pages/CollaboratorFormPage'
+import AdminSubmissionsPage from './pages/admin/AdminSubmissionsPage'
+import AdminReviewInboxPage from './pages/admin/AdminReviewInboxPage'
+import AdminDataIOPage from './pages/admin/AdminDataIOPage'
+import AdminApiPage from './pages/admin/AdminApiPage'
+import AdminVisitsPage from './pages/admin/AdminVisitsPage'
 import MarketplaceBrowsePage from './pages/MarketplaceBrowsePage'
 import WorkshopsMapPage from './pages/WorkshopsMapPage'
 import MarketplaceProductPage from './pages/MarketplaceProductPage'
@@ -82,6 +88,7 @@ function App() {
           <Route path="guias/:slug" element={<GuideDetailPage />} />
           <Route path="payment-result" element={<PaymentResultPage />} />
           <Route path="talleres" element={<WorkshopsMapPage />} />
+          <Route path="colaborar" element={<CollaboratorGuard><CollaboratorFormPage /></CollaboratorGuard>} />
           <Route path="compatibilidad" element={<CompatibilidadPage />} />
         </Route>
         <Route path="panel" element={<PanelGuard><PanelLayout /></PanelGuard>}>
@@ -121,6 +128,11 @@ function App() {
           <Route path="data/productos/:id" element={<AdminAftermarketProductEditorPage />} />
           <Route path="qa" element={<AdminQAPanelPage />} />
           <Route path="kyc" element={<AdminKycReviewPage />} />
+          <Route path="submissions" element={<AdminSubmissionsPage />} />
+          <Route path="revision" element={<AdminReviewInboxPage />} />
+          <Route path="datos" element={<AdminDataIOPage />} />
+          <Route path="api" element={<AdminApiPage />} />
+          <Route path="visitas" element={<AdminVisitsPage />} />
         </Route>
       </Routes>
       <ToastHost />
@@ -163,6 +175,22 @@ function PanelGuard({ children }: { children: React.ReactNode }) {
     return <Navigate to="/dashboard" replace />
   }
 
+  return <>{children}</>
+}
+
+function CollaboratorGuard({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuthStore()
+
+  if (loading) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh' }}>Cargando...</div>
+  }
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+  // Solo colaboradores marcados por un admin (o el propio admin) acceden al formulario.
+  if (!profile?.is_collaborator && !profile?.is_admin) {
+    return <Navigate to="/dashboard" replace />
+  }
   return <>{children}</>
 }
 

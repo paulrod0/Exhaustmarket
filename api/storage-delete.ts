@@ -20,7 +20,12 @@ export async function POST(req: Request): Promise<Response> {
     // Deriva el key del pathname (funciona con el host viejo r2.dev, el dominio
     // propio nuevo, o cualquier host futuro; el key bucket/prefix/... es el mismo).
     let key: string
-    try { key = new URL(publicUrl).pathname.replace(/^\/+/, '') } catch { return json({ error: 'bad url' }, 400) }
+    // El key real en R2 es `bucket/prefix/archivo`. Las URLs nuevas son del proxy
+    // (`/api/img/bucket/prefix/...`): hay que quitar tanto la barra inicial como el
+    // prefijo `api/img/`, o el DeleteObject apuntaría a un key inexistente y no borraría.
+    try {
+      key = new URL(publicUrl).pathname.replace(/^\/+/, '').replace(/^api\/img\//, '')
+    } catch { return json({ error: 'bad url' }, 400) }
     if (!key) return json({ error: 'no key' }, 400)
 
     const s3 = new S3Client({

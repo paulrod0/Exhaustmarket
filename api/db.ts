@@ -100,9 +100,12 @@ function redactDiagram(row: Record<string, unknown>, c: RedactCtx): Record<strin
 // Manuales: la lista es pública, pero descargar (file_url) exige el tier del manual.
 // required_tier 'standard' (o nulo) = descarga libre; cualquier otro = Taller+ (canWS).
 function redactManual(row: Record<string, unknown>, c: RedactCtx): Record<string, unknown> {
-  // Dossier: descargar manuales es Taller+ (el Particular no tiene manuales). Además se respeta
-  // el required_tier del manual si exige un tier superior. La lista sigue pública; solo file_url.
-  const need = Math.max(1, rankOf(String(row.required_tier ?? 'standard')))
+  // Se respeta EXACTAMENTE el required_tier elegido por el admin al subir el manual:
+  // 'standard' (etiquetado "Acceso libre" en el form) = descarga libre; workshop/professional/
+  // premium = ese tier mínimo. Antes había un Math.max(1,...) que forzaba Taller+ aunque el
+  // manual fuese 'standard', devolvía file_url:null y el PDF "no abría" para el usuario normal
+  // (bug reportado del Porsche 992.2). La lista sigue pública; solo se recorta file_url.
+  const need = rankOf(String(row.required_tier ?? 'standard'))
   if (c.isAdmin || rankOf(c.userType) >= need) return row
   return { ...row, file_url: null }
 }
@@ -141,6 +144,11 @@ interface Rule {
   // siguen scopeados por ownerAny. Sin esto, ownerAny dejaría forjar el remitente (crear una
   // solicitud a nombre de otro usuario).
   insertColumn?: string
+  // Solo para tablas con publicColumn (design_3d): además de ser pública, la fila debe estar
+  // verificada (status='approved') para que la vean TERCEROS. El dueño ve la suya en cualquier
+  // estado (rama ownerColumn) y el admin lo ve todo (bypass). Evita que un 3D público sin revisar
+  // aparezca a otros usuarios antes de la verificación del admin.
+  publicStatusApproved?: boolean
 }
 
 const RULES: Record<string, Rule> = {
@@ -148,6 +156,17 @@ const RULES: Record<string, Rule> = {
   exhaust_schemas: { read: 'public', write: 'admin' },
   schema_brand_suggestions: { read: 'public', write: 'admin' },
   schema_article_links: { read: 'public', write: 'admin' },
+  schema_manual_links: { read: 'public', write: 'admin' },
+  schema_3d_links: { read: 'public', write: 'admin' },
+  // Cola de revisión: auditoría y lotes de ingesta (solo admin; la escritura real va por /api/review).
+  review_audit: { read: 'admin', write: 'admin' },
+  ingest_batches: { read: 'admin', write: 'admin' },
+  // Envíos de colaboradores: el colaborador crea/edita/borra SOLO los suyos (ownerColumn),
+  // el admin los ve/edita todos (bypass de ownerFilter). Las columnas de revisión
+  // (status/reviewed_*/published_schema_id) están protegidas: el colaborador no puede
+  // auto-aprobarse (además, aprobar NO publica nada por sí solo; publicar es un insert
+  // aparte del admin en exhaust_schemas).
+  schema_submissions: { read: 'authed', write: 'authed', ownerColumn: 'submitted_by' },
   articles: { read: 'public', write: 'admin' },
   manuals: { read: 'public', write: 'admin' },
   subscription_tiers: { read: 'public', write: 'admin' },
@@ -162,16 +181,20 @@ const RULES: Record<string, Rule> = {
   // puede CREARLA → insertColumn:'user_id' (RLS INSERT WITH CHECK user_id = auth.uid()). Con
   // ownerColumn simple, el destinatario NO podía ver sus "recibidas" ni marcar la solicitud como
   // 'quoted' al responder (el facade forzaba user_id = yo en todo SELECT/UPDATE).
-  quote_requests: { read: 'authed', write: 'authed', ownerAny: ['user_id', 'target_user_id'], insertColumn: 'user_id' },
+  // ESCRITURA solo por /api/quotes (máquina de estados del módulo de visita: valida quién puede
+  // hacer qué en cada estado, deja historial y avisa). Desde el navegador solo se LEE.
+  quote_requests: { read: 'authed', write: 'admin', ownerAny: ['user_id', 'target_user_id'], insertColumn: 'user_id' },
   // Presupuestos: hijos de quote_requests. Los ve el solicitante (user_id) y el taller (target_user_id).
-  quotes: { read: 'authed', write: 'authed', ownerVia: { column: 'quote_request_id', parentTable: 'quote_requests', parentOwnerColumns: ['user_id', 'target_user_id'], insertColumn: 'quoted_by' } },
+  quotes: { read: 'authed', write: 'admin', ownerVia: { column: 'quote_request_id', parentTable: 'quote_requests', parentOwnerColumns: ['user_id', 'target_user_id'], insertColumn: 'quoted_by' } },
+  // Avisos in-app (campana). Los crea el servidor (/api/quotes); cada usuario lee y marca como leídos los suyos.
+  notifications: { read: 'authed', write: 'authed', ownerColumn: 'user_id' },
   // Facturas (PII + importes): visibles para vendedor Y comprador; el vendedor las emite (insert).
   // Facturas (PII + importes): visibles para vendedor Y comprador (ownerAny). La EMISIÓN/mutación
   // NO puede venir del cliente (forjaría facturas atribuidas a terceros) -> write admin.
   invoices: { read: 'authed', write: 'admin', ownerAny: ['seller_id', 'buyer_id'] },
   professional_products: { read: 'public', write: 'authed', ownerColumn: 'professional_id' },
   workshop_services: { read: 'public', write: 'authed', ownerColumn: 'workshop_id' },
-  design_3d: { read: 'oem', write: 'oem', ownerColumn: 'uploaded_by', publicColumn: 'is_public' },
+  design_3d: { read: 'oem', write: 'oem', ownerColumn: 'uploaded_by', publicColumn: 'is_public', publicStatusApproved: true },
   supplier_api_keys: { read: 'authed', write: 'authed', ownerColumn: 'user_id' },
   supplier_sync_logs: { read: 'authed', write: 'authed', ownerColumn: 'user_id' },
   user_documents: { read: 'authed', write: 'authed', ownerColumn: 'user_id' },
@@ -372,6 +395,62 @@ async function rateBump(pool: Pool, id: string, rows: number): Promise<boolean> 
   }
 }
 
+// ─── Cola de revisión obligatoria (Solicitud nº3, P1) ───
+// Estado de publicación por tabla de contenido. La visibilidad pública se DERIVA del estado: a los
+// no-admin solo se les sirven filas aprobadas, en la capa de datos (no solo en la interfaz). Todo lo
+// existente se migró a 'aprobado' (no cambia su visibilidad); lo que entra por API, importación o
+// colaborador nace 'pendiente_revision'. El admin crea en 'aprobado' por defecto ("publicar ya").
+interface PubCfg { col: string; approved: string; filterPublic: boolean }
+const PUB_STD: PubCfg = { col: 'pub_status', approved: 'aprobado', filterPublic: true }
+const PUB_TABLES: Record<string, PubCfg> = {
+  vehicles: PUB_STD, engines: PUB_STD, exhaust_diagrams: PUB_STD, exhaust_parts: PUB_STD,
+  exhaust_aftermarket_products: PUB_STD, compatibilities: PUB_STD, exhaust_schemas: PUB_STD,
+  articles: PUB_STD, manuals: PUB_STD,
+  schema_article_links: PUB_STD, schema_manual_links: PUB_STD, schema_3d_links: PUB_STD,
+  // design_3d conserva su propio estado (status pending/approved/rejected) y su visibilidad
+  // owner-OR-(pública Y aprobada) vía publicStatusApproved: aquí NO se filtra a ciegas (el dueño
+  // debe ver sus diseños pendientes).
+  design_3d: { col: 'status', approved: 'approved', filterPublic: false },
+}
+// Columnas internas de la revisión que no viajan al público (cambios propuestos sin revisar,
+// lotes, ids de integración…). review_note sí la ve el dueño de un design_3d (motivo de rechazo).
+const PUB_INTERNAL = ['pending_changes', 'lote_id', 'id_externo', 'origen', 'reviewed_by', 'reviewed_at']
+function stripInternal(table: string, row: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...row }
+  for (const c of PUB_INTERNAL) delete out[c]
+  if (table !== 'design_3d') delete out.review_note
+  return out
+}
+// Webhooks salientes (Solicitud nº3, F3): altas por la web que avisan a las integraciones. Solo se
+// ENCOLAN aquí (webhook_deliveries); los entrega y reintenta el cron de /api/v1 (_cron/webhooks).
+const WEBHOOK_TABLES: Record<string, string> = { design_3d: 'file.uploaded', manuals: 'file.uploaded', schema_submissions: 'submission.created' }
+async function enqueueWebhooks(pool: Pool, table: string, rows: Record<string, unknown>[]) {
+  const event = WEBHOOK_TABLES[table]
+  const hooks = (await pool.query(`SELECT id, events FROM webhooks WHERE active = true`)).rows as { id: string; events: string[] | null }[]
+  const targets = hooks.filter((h) => !h.events?.length || h.events.includes(event))
+  if (!targets.length) return
+  for (const r of rows) {
+    // Datos mínimos: el receptor consulta el detalle por la API con su clave.
+    const data = table === 'schema_submissions'
+      ? { table, id: r.id, created_at: r.created_at ?? null }
+      : { table, id: r.id, title: r.title ?? null, file_url: r.file_url ?? null, origen: r.origen ?? null, estado: r.pub_status ?? r.status ?? null }
+    const payload = JSON.stringify({ event, occurred_at: new Date().toISOString(), data })
+    for (const h of targets) await pool.query(`INSERT INTO webhook_deliveries (webhook_id, event, payload) VALUES ($1, $2, $3)`, [h.id, event, payload])
+  }
+}
+
+/** Trazabilidad de origen, fijada por el SERVIDOR (no falsificable desde el cliente). */
+function withServerTrace(table: string, row: Record<string, unknown>, auth: AuthContext | null): Record<string, unknown> {
+  if (!PUB_TABLES[table]) return row
+  const out = { ...row }
+  if (auth?.isAdmin) {
+    if (out.origen == null) out.origen = 'admin'
+  } else {
+    out.origen = `colaborador:${auth?.profileId ?? 'anon'}`
+  }
+  return out
+}
+
 // Columnas que un NO-admin nunca puede escribir por el facade (las gestiona el servidor:
 // webhooks Stripe, kyc en api/marketplace.ts, o el admin). Evita auto-escalada de rol
 // (is_admin), auto-subida de tier (user_type), auto-verificación (is_verified/kyc_*),
@@ -381,7 +460,25 @@ const PROTECTED_COLUMNS: Record<string, Set<string>> = {
     'is_admin', 'user_type', 'is_verified', 'kyc_status', 'kyc_submitted_at', 'kyc_verified_at',
     'commission_rate', 'stripe_customer_id', 'stripe_account_id', 'charges_enabled',
     'payouts_enabled', 'connect_details_submitted', 'connect_requirements', 'connect_onboarded_at',
+    'is_collaborator', // solo el admin marca colaboradores; nadie se auto-concede el rol
   ]),
+  // El colaborador NO puede tocar el veredicto de su propio envío (solo el admin, que hace bypass).
+  schema_submissions: new Set([
+    'status', 'reviewed_by', 'reviewed_at', 'review_notes', 'published_schema_id',
+    // El colaborador propone el escaneo 3D (scan_3d_url/format), pero el cierre del bucle
+    // (marcarlo publicado y enlazar el design_3d creado) lo hace SOLO el admin.
+    'scan_3d_status', 'published_design_3d_id',
+  ]),
+  // Diseños 3D: el dueño (Profesional) sube/edita, pero NO se auto-verifica; solo el admin fija
+  // el veredicto. Sin esto, un Profesional podría poner status='approved' y auto-publicar.
+  design_3d: new Set(['status', 'reviewed_by', 'reviewed_at']),
+}
+// Estado de publicación y trazabilidad: solo el admin (o el servidor) los fija en las tablas de
+// contenido. Nadie puede auto-aprobarse, falsificar su origen ni colar cambios "ya revisados".
+for (const t of Object.keys(PUB_TABLES)) {
+  const set = PROTECTED_COLUMNS[t] ?? new Set<string>()
+  for (const c of ['pub_status', 'origen', 'id_externo', 'lote_id', 'review_note', 'reviewed_by', 'reviewed_at', 'pending_changes']) set.add(c)
+  PROTECTED_COLUMNS[t] = set
 }
 /** Quita del payload las columnas protegidas si el actor no es admin. */
 function stripProtected(table: string, data: Record<string, unknown>, auth: AuthContext | null): Record<string, unknown> {
@@ -406,6 +503,7 @@ export async function POST(req: Request): Promise<Response> {
     if (body.op === 'select') {
       if (!canRead(body.table, auth)) return json({ data: null, error: { message: 'forbidden' } }, 403)
       const rule = RULES[body.table]
+      const pubCfg = PUB_TABLES[body.table]
       const filters: Filter[] = [...(body.filters ?? [])]
       const oFilter = ownerFilter(body.table, auth)
       if (oFilter) filters.push([oFilter.column, 'eq', oFilter.value])
@@ -414,12 +512,23 @@ export async function POST(req: Request): Promise<Response> {
       // Visibilidad owner-OR-public (p.ej. design_3d): el no-admin ve sus filas + las públicas.
       if (rule.ownerColumn && rule.publicColumn && auth && !auth.isAdmin) {
         values.push(auth.profileId ?? '__no_profile__')
-        where += `${where ? ' AND' : ' WHERE'} (${ident(rule.ownerColumn)} = $${values.length} OR ${ident(rule.publicColumn)} = TRUE)`
+        // La fila pública de un tercero solo es visible si está verificada (status='approved')
+        // cuando la regla lo exige (design_3d). El dueño ve las suyas en cualquier estado.
+        const pub = rule.publicStatusApproved
+          ? `(${ident(rule.publicColumn)} = TRUE AND ${ident('status')} = 'approved')`
+          : `${ident(rule.publicColumn)} = TRUE`
+        where += `${where ? ' AND' : ' WHERE'} (${ident(rule.ownerColumn)} = $${values.length} OR ${pub})`
       }
       // Scoping multi-parte (transactions/invoices/marketplace_orders) o hija (quotes): el no-admin
       // solo ve filas donde es una de las partes. Sin esto, read:'authed' devolvería TODAS las filas.
       const extraScope = ownerScopeMulti(body.table, auth, values)
       if (extraScope) where += `${where ? ' AND' : ' WHERE'} ${extraScope}`
+      // Cola de revisión: a los no-admin solo se les sirven filas APROBADAS (lo pendiente o
+      // rechazado no existe para el público, tampoco por API ni buscador).
+      if (pubCfg?.filterPublic && !auth?.isAdmin) {
+        values.push(pubCfg.approved)
+        where += `${where ? ' AND' : ' WHERE'} ${ident(pubCfg.col)} = $${values.length}`
+      }
       const order = buildOrder(body.order)
       const limit = body.limit ? ` LIMIT ${Number(body.limit)}` : ''
       const single = body.single || body.maybeSingle
@@ -436,7 +545,9 @@ export async function POST(req: Request): Promise<Response> {
         const over = await rateBump(pool, rateId(req, auth), rawRows.length)
         if (over) return json({ data: null, error: { message: 'Límite de extracción alcanzado. Inténtalo más tarde.' } }, 429)
       }
-      const rows = redactor && !ctx.isAdmin ? rawRows.map((r) => redactor(r, ctx)) : rawRows
+      const redacted = redactor && !ctx.isAdmin ? rawRows.map((r) => redactor(r, ctx)) : rawRows
+      // Las columnas internas de la revisión no salen del servidor para no-admins.
+      const rows = pubCfg && !ctx.isAdmin ? redacted.map((r) => stripInternal(body.table, r)) : redacted
       if (body.single) {
         if (rows.length === 0) return json({ data: null, error: { message: 'no rows' } }, 404)
         if (rows.length > 1) return json({ data: null, error: { message: 'multiple rows' } }, 406)
@@ -451,6 +562,7 @@ export async function POST(req: Request): Promise<Response> {
     if (body.op === 'insert' || body.op === 'upsert') {
       const rows = (Array.isArray(body.data) ? body.data : [body.data])
         .map((r) => stripProtected(body.table, r as Record<string, unknown>, auth)) // no-admin: sin columnas protegidas
+        .map((r) => withServerTrace(body.table, r, auth)) // origen fijado por el servidor (trazabilidad)
       if (!rows.length) return json({ data: [], error: null })
       const cols = Object.keys(rows[0] ?? {})
       if (!cols.length) return json({ data: null, error: { message: 'no columns' } }, 400)
@@ -472,6 +584,7 @@ export async function POST(req: Request): Promise<Response> {
       }
       q += ' RETURNING *'
       const result = (await pool.query(q, values)).rows as Record<string, unknown>[]
+      if (WEBHOOK_TABLES[body.table] && result.length) await enqueueWebhooks(pool, body.table, result).catch((e) => console.error('webhook enqueue', e))
       return json({ data: (body.single || body.maybeSingle) ? (result[0] ?? null) : result, error: null })
     }
 

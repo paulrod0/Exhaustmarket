@@ -197,6 +197,10 @@ export interface DespieceItem {
   specification: string                  // "chapa 1.5 mm"
   quantity: string                       // "1 ud"
   process: string                        // "Corte y plegado"
+  /** Productos del marketplace equivalentes a este elemento del despiece (brida turbo,
+   *  sonda lambda, flexible, brida universal…). Ids de professional_products. Si está vacío,
+   *  la ficha pública cae al emparejamiento por nombre. */
+  product_ids?: string[]
 }
 
 export interface CostBreakdown {

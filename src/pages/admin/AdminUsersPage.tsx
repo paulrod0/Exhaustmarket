@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Search, Shield, ShieldOff, Crown, Users, Loader2, Mail } from 'lucide-react'
+import { Search, Shield, ShieldOff, Crown, Users, Loader2, Mail, Pencil } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { toast } from '../../lib/toast'
 import {
@@ -13,6 +13,7 @@ interface UserRow {
   email: string | null
   user_type: UserTier
   is_admin: boolean
+  is_collaborator: boolean
   is_verified: boolean
   company_name: string | null
   phone: string | null
@@ -87,6 +88,20 @@ export default function AdminUsersPage() {
     await load()
   }
 
+  async function toggleCollaborator(user: UserRow) {
+    const next = !user.is_collaborator
+    const { error } = await supabase
+      .from('user_profiles' as any)
+      .update({ is_collaborator: next } as any)
+      .eq('id', user.id)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    toast.success(next ? 'Ahora es colaborador' : 'Ya no es colaborador')
+    await load()
+  }
+
   return (
     <div>
       <header style={headerStyle}>
@@ -142,6 +157,7 @@ export default function AdminUsersPage() {
             <div>Usuario</div>
             <div>Tier</div>
             <div>Admin</div>
+            <div>Colaborador</div>
             <div>Registrado</div>
             <div />
           </div>
@@ -190,6 +206,28 @@ export default function AdminUsersPage() {
                 >
                   {u.is_admin ? <Shield size={11} /> : <ShieldOff size={11} />}
                   {u.is_admin ? 'Admin' : 'Hacer admin'}
+                </button>
+              </div>
+              <div>
+                <button
+                  onClick={() => toggleCollaborator(u)}
+                  title={u.is_collaborator ? 'Quitar colaborador' : 'Marcar como colaborador'}
+                  style={{
+                    background: 'none',
+                    border: '1px solid ' + (u.is_collaborator ? '#0071E3' : '#E5E5EA'),
+                    borderRadius: 6,
+                    padding: '5px 10px',
+                    cursor: 'pointer',
+                    color: u.is_collaborator ? '#0060C0' : '#86868B',
+                    fontSize: 11,
+                    fontWeight: 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <Pencil size={11} />
+                  {u.is_collaborator ? 'Colaborador' : 'Marcar'}
                 </button>
               </div>
               <div style={{ fontSize: 11, color: '#86868B' }}>
@@ -251,7 +289,7 @@ const tableStyle: React.CSSProperties = {
 
 const tableHeaderStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '2fr 140px 140px 120px 30px',
+  gridTemplateColumns: '2fr 130px 120px 130px 110px 30px',
   gap: 12,
   padding: '10px 16px',
   backgroundColor: '#F5F5F7',
@@ -264,7 +302,7 @@ const tableHeaderStyle: React.CSSProperties = {
 
 const tableRowStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '2fr 140px 140px 120px 30px',
+  gridTemplateColumns: '2fr 130px 120px 130px 110px 30px',
   gap: 12,
   padding: '12px 16px',
   borderTop: '1px solid #F2F2F7',

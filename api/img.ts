@@ -66,7 +66,9 @@ function parseKey(url: string): string | null {
     return null
   }
   if (!key) return null
-  if (key.includes('..') || key.startsWith('/') || key.includes('\0') || key.includes('\\')) return null
+  // Traversal por SEGMENTOS ('..' o '.' como carpeta). Un '..' dentro de un nombre de archivo
+  // ("guia-v1..pdf") es legítimo y antes se rechazaba (400) dejando esos archivos inaccesibles.
+  if (key.startsWith('/') || key.includes('\0') || key.includes('\\') || key.split('/').some((seg) => seg === '..' || seg === '.' || seg === '')) return null
   const prefix = key.split('/')[0]
   if (!ALLOWED_PREFIXES.has(prefix)) return null
   return key
@@ -82,6 +84,18 @@ function s3client(): S3Client | null {
     endpoint: `https://${ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId: ACCESS_KEY_ID, secretAccessKey: SECRET_ACCESS_KEY },
   })
+}
+
+// Tipos que el navegador abriría como DOCUMENTO activo en nuestro origen (XSS almacenado si alguien
+// sube un .html/.xml/.js): nunca se sirven tal cual, van como descarga. Los SVG sí se sirven (logos),
+// pero con una CSP que bloquea scripts si se abren directamente. nosniff en todo.
+const ACTIVE_TYPES = new Set(['text/html', 'application/xhtml+xml', 'text/xml', 'application/xml', 'text/javascript',
+  'application/javascript', 'application/x-javascript', 'application/ecmascript', 'text/ecmascript'])
+function typeHeaders(ctype: string): Record<string, string> {
+  const base = ctype.split(';')[0].trim().toLowerCase()
+  if (ACTIVE_TYPES.has(base)) return { 'content-type': 'application/octet-stream', 'content-disposition': 'attachment', 'x-content-type-options': 'nosniff' }
+  if (base === 'image/svg+xml') return { 'content-type': ctype, 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:; sandbox", 'x-content-type-options': 'nosniff' }
+  return { 'content-type': ctype, 'x-content-type-options': 'nosniff' }
 }
 
 function contentTypeFor(key: string, fromR2?: string): string {
@@ -107,7 +121,7 @@ async function serve(req: Request, isHead: boolean): Promise<Response> {
     if (isHead) {
       const head = await s3.send(new HeadObjectCommand({ Bucket: BUCKET, Key: key }))
       const headers: Record<string, string> = {
-        'content-type': contentTypeFor(key, head.ContentType),
+        ...typeHeaders(contentTypeFor(key, head.ContentType)),
         'cache-control': IMMUTABLE,
         'vercel-cdn-cache-control': IMMUTABLE,
       }
@@ -125,7 +139,7 @@ async function serve(req: Request, isHead: boolean): Promise<Response> {
 
     const ctype = contentTypeFor(key, obj.ContentType)
     const headers: Record<string, string> = {
-      'content-type': ctype,
+      ...typeHeaders(ctype),
       'cache-control': IMMUTABLE,
       'vercel-cdn-cache-control': IMMUTABLE,
     }

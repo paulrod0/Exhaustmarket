@@ -53,9 +53,15 @@ export default function AdminVehiclesListPage() {
         body: csvText,
       })
       const json = await res.json()
-      if (json.ok) {
-        alert(`Importadas ${json.inserted} filas. ${json.errors?.length ? `Errores: ${json.errors.length}` : ''}`)
-        window.location.reload()
+      if (json.ok && !json.lote_id) {
+        alert(`Nada nuevo que importar: ${json.unchanged ?? 0} fila(s) sin cambios${json.skipped ? `, ${json.skipped} duplicadas` : ''}.`)
+      } else if (json.ok) {
+        // Cola de revisión: lo importado nace PENDIENTE (no se ve en la web hasta aprobarlo).
+        alert(`Importadas ${json.inserted} filas como PENDIENTES de revisión${json.skipped ? ` (${json.skipped} omitidas por duplicadas)` : ''}.\nApruébalas en la Bandeja de revisión.`)
+        window.location.href = `/admin/revision?lote=${json.lote_id}`
+      } else if (Array.isArray(json.errors) && json.errors.length) {
+        const sample = json.errors.slice(0, 6).map((e: { row: number; field?: string; message: string }) => `· fila ${e.row}${e.field ? ` (${e.field})` : ''}: ${e.message}`).join('\n')
+        alert(`No se importó NADA: hay ${json.errors.length} error(es).\n${sample}\n\nVe a «Importar / exportar» para ver el informe completo.`)
       } else {
         alert('Error: ' + (json.error || 'desconocido'))
       }

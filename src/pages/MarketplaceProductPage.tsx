@@ -6,6 +6,7 @@ import { cart } from '../lib/cart'
 import { useAuthStore } from '../stores/authStore'
 import { auth as authClient } from '../lib/auth-client'
 import { effectivePrice } from '../lib/contentTypes'
+import { hasSpecs, specRows, type ProductSpecs } from '../lib/productSpecs'
 
 interface AnyProduct extends Record<string, any> {
   id: string
@@ -150,6 +151,22 @@ export default function MarketplaceProductPage() {
           )}
 
           <p style={{ lineHeight: 1.6, marginBottom: 24, whiteSpace: 'pre-wrap' }}>{description}</p>
+
+          {kind === 'product' && hasSpecs(item as ProductSpecs) && (
+            <div style={{ marginBottom: 20 }}>
+              <h2 style={{ fontSize: 13, fontWeight: 600, color: '#86868B', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }}>Medidas</h2>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <tbody>
+                  {specRows(item as ProductSpecs).map(([k, v]) => (
+                    <tr key={k} style={{ borderBottom: '1px solid #F2F2F7' }}>
+                      <td style={{ padding: '7px 0', color: '#6E6E73', width: '45%' }}>{k}</td>
+                      <td style={{ padding: '7px 0', color: '#1D1D1F', fontWeight: 500 }}>{v}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {item.stock !== undefined && item.stock !== null && (
             <p style={{ fontSize: 13, color: item.stock > 0 ? '#34C759' : '#FF3B30', marginBottom: 16 }}>

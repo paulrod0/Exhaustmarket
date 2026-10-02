@@ -21,6 +21,8 @@ import { compressImage } from '../../lib/imageCompress'
 import BrandSuggestionsPicker from '../../components/admin/BrandSuggestionsPicker'
 import TierSelector from '../../components/admin/TierSelector'
 import SchemaArticleLinksPicker from '../../components/admin/SchemaArticleLinksPicker'
+import SchemaManualLinksPicker from '../../components/admin/SchemaManualLinksPicker'
+import SchemaThreeDLinksPicker from '../../components/admin/SchemaThreeDLinksPicker'
 import { toast } from '../../lib/toast'
 import { Copy } from 'lucide-react'
 
@@ -81,6 +83,7 @@ export default function AdminSchemaEditorPage() {
   )
   const [loading, setLoading] = useState(!isNew)
   const [saving, setSaving] = useState(false)
+  const savingRef = useRef(false) // guarda síncrona anti doble-clic (evita crear fichas duplicadas)
   const [error, setError] = useState<string | null>(null)
   // Productos del marketplace para el picker plug&play por componente.
   const [products, setProducts] = useState<{ id: string; product_name: string; category: string | null }[]>([])
@@ -197,10 +200,12 @@ export default function AdminSchemaEditorPage() {
 
   async function save() {
     setError(null)
+    if (savingRef.current) return // ya hay un guardado en curso (doble-clic): no dupliques
     if (!form.brand.trim() || !form.model.trim()) {
       setError('Marca y modelo son obligatorios.')
       return
     }
+    savingRef.current = true
     setSaving(true)
     const payload = {
       brand: form.brand.trim(),
@@ -232,6 +237,7 @@ export default function AdminSchemaEditorPage() {
         .select('id')
         .single()
       setSaving(false)
+      savingRef.current = false
       if (error) {
         setError(error.message)
         toast.error('No se pudo crear: ' + error.message)
@@ -245,6 +251,7 @@ export default function AdminSchemaEditorPage() {
         .update(payload as any)
         .eq('id', id!)
       setSaving(false)
+      savingRef.current = false
       if (error) {
         setError(error.message)
         toast.error('Error al guardar: ' + error.message)
@@ -606,11 +613,27 @@ export default function AdminSchemaEditorPage() {
       {/* Sección 2d: Guías y tutoriales asociados */}
       <Section
         title="Guías y tutoriales relacionados"
-        subtitle="Asocia artículos del blog con este modelo. Aparecerán automáticamente en la ficha pública como 'Tutoriales para este coche'."
+        subtitle="Asocia artículos del blog con este modelo. Aparecerán en la ficha pública. Con el botón de alcance eliges si vale solo para esta motorización o para todas las del modelo."
       >
         <SchemaArticleLinksPicker
           mode={{ kind: 'for-schema', schemaId: id && id !== 'nuevo' ? id : null }}
         />
+      </Section>
+
+      {/* Sección 2e: Manuales asociados */}
+      <Section
+        title="Manuales relacionados"
+        subtitle="Asocia manuales (PDF) con este modelo. Aparecerán en 'Contenido relacionado' → Manuales. «Todo el modelo» = también en las demás motorizaciones de la misma marca y modelo."
+      >
+        <SchemaManualLinksPicker schemaId={id && id !== 'nuevo' ? id : null} />
+      </Section>
+
+      {/* Sección 2f: Archivos 3D asociados */}
+      <Section
+        title="Archivos 3D relacionados"
+        subtitle="Asocia escaneos/diseños 3D a este modelo. Aparecerán en 'Contenido relacionado' → Archivos 3D (visible para Profesional+). «Todo el modelo» = también en las demás motorizaciones."
+      >
+        <SchemaThreeDLinksPicker schemaId={id && id !== 'nuevo' ? id : null} />
       </Section>
 
       {/* Sección 3: Componentes */}
@@ -860,6 +883,7 @@ export default function AdminSchemaEditorPage() {
       >
         <DespieceEditor
           items={form.despiece}
+          products={products}
           onChange={(next) => setForm({ ...form, despiece: next })}
         />
       </Section>
@@ -1209,9 +1233,11 @@ const inputStyle: React.CSSProperties = {
 
 function DespieceEditor({
   items,
+  products,
   onChange,
 }: {
   items: DespieceItem[]
+  products: { id: string; product_name: string; category: string | null }[]
   onChange: (next: DespieceItem[]) => void
 }) {
   function update(i: number, patch: Partial<DespieceItem>) {
@@ -1237,8 +1263,8 @@ function DespieceEditor({
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {items.map((it, i) => (
+          <div key={i}>
           <div
-            key={i}
             style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(5, 1fr) 32px',
@@ -1293,6 +1319,12 @@ function DespieceEditor({
             >
               ×
             </button>
+          </div>
+          <ComponentProductPicker
+            selected={it.product_ids ?? []}
+            all={products}
+            onChange={(ids) => update(i, { product_ids: ids })}
+          />
           </div>
         ))}
       </div>

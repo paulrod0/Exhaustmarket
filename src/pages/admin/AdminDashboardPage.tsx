@@ -15,8 +15,10 @@ import {
   Wrench,
   Tag,
   ClipboardCheck,
+  Inbox,
 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { adminFetch } from '../../lib/adminApi'
 
 interface Stats {
   schemas: number
@@ -44,6 +46,12 @@ interface Stats {
 
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null)
+  const [review, setReview] = useState<{ publicacion: number; qa: number; envios: number } | null>(null)
+
+  useEffect(() => {
+    adminFetch<{ publicacion: number; qa: number; envios: number }>('/api/review', { query: { op: 'counts' } })
+      .then(setReview).catch(() => { /* no crítico */ })
+  }, [])
 
   useEffect(() => {
     ;(async () => {
@@ -135,6 +143,29 @@ export default function AdminDashboardPage() {
           Vista general de todo el contenido y usuarios de ExhaustMarket.
         </p>
       </header>
+
+      {/* Bandeja de revisión: el punto de entrada único a todo lo que hay que revisar */}
+      <Link to="/admin/revision" style={{
+        display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', textDecoration: 'none',
+        background: 'linear-gradient(135deg, #0B1F3A, #123A6B)', color: '#fff', borderRadius: 16, padding: '18px 22px', marginBottom: 20,
+      }}>
+        <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Inbox size={22} />
+        </div>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>Bandeja de revisión</div>
+          <div style={{ fontSize: 12.5, opacity: 0.8 }}>Publicación (API, importación, colaboradores) · Verificación QA · Envíos de colaboradores — todo en un sitio</div>
+        </div>
+        <div style={{ display: 'flex', gap: 18 }}>
+          {[['Publicación', review?.publicacion], ['QA', review?.qa], ['Envíos', review?.envios]].map(([l, n]) => (
+            <div key={l as string} style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 22, fontWeight: 800 }}>{n ?? '–'}</div>
+              <div style={{ fontSize: 11, opacity: 0.75 }}>{l}</div>
+            </div>
+          ))}
+        </div>
+        <ArrowRight size={18} />
+      </Link>
 
       {/* Stats grid */}
       <div
@@ -230,7 +261,7 @@ export default function AdminDashboardPage() {
             icon={<Tag size={18} />}
           />
           <StatCard
-            to="/admin/qa"
+            to="/admin/revision?tab=qa"
             label="Pendientes QA"
             value={stats.pendingQa}
             sub={stats.pendingQa === 0 ? 'Sin nada a revisar' : 'Revisar urgente'}

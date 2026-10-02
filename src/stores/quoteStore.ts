@@ -1,217 +1,24 @@
 import { create } from 'zustand'
-import { supabase } from '../lib/supabase'
-import { attachRelated, attachChildren } from '../lib/joinRelated'
-import { useAuthStore } from './authStore'
-import type { Database } from '../types/database'
+import { quotesApi, type QItem } from '../lib/quotesApi'
 
-// El "id de dueño" para columnas owner-scoped (user_id, target_user_id, quoted_by...) es el UUID
-// del perfil (user_profiles.id), NO el Clerk id que devuelve supabase.auth.getUser().user.id. El
-// facade /api/db compara esas columnas contra auth.profileId (uuid). Ver authStore.fetchProfile.
-function currentProfileId(): string | null {
-  return useAuthStore.getState().profile?.id ?? null
-}
-
-type QuoteRequest = Database['public']['Tables']['quote_requests']['Row']
-type Quote = Database['public']['Tables']['quotes']['Row']
-type UserProfile = Database['public']['Tables']['user_profiles']['Row']
-
-interface CreateQuoteRequestData {
-  target_user_id: string
-  car_model: string
-  car_year: number
-  service_type: string
-  specifications: string
-}
-
-interface RespondToQuoteData {
-  quote_request_id: string
-  price: number
-  notes: string
-  valid_until: string
-}
-
+/**
+ * Lectura de solicitudes de presupuesto para el panel de inicio (DashboardPage). Toda la gestión
+ * (crear, responder, visita de diagnóstico, presupuesto final…) vive en QuotesPage + /api/quotes.
+ */
 interface QuoteState {
-  workshops: UserProfile[]
-  sentRequests: (QuoteRequest & { target: UserProfile | null; quotes: Quote[] })[]
-  receivedRequests: (QuoteRequest & { sender: UserProfile | null; quotes: Quote[] })[]
-  loading: boolean
-  error: string | null
-  fetchWorkshops: () => Promise<void>
-  createQuoteRequest: (data: CreateQuoteRequestData) => Promise<void>
+  sentRequests: QItem[]
+  receivedRequests: QItem[]
   fetchSentRequests: () => Promise<void>
   fetchReceivedRequests: () => Promise<void>
-  respondToQuote: (data: RespondToQuoteData) => Promise<void>
-  updateRequestStatus: (requestId: string, status: string) => Promise<void>
 }
 
-export const useQuoteStore = create<QuoteState>((set, get) => ({
-  workshops: [],
+export const useQuoteStore = create<QuoteState>((set) => ({
   sentRequests: [],
   receivedRequests: [],
-  loading: false,
-  error: null,
-
-  fetchWorkshops: async () => {
-    const { data, error } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .in('user_type', ['workshop', 'professional'])
-      .eq('is_verified', true)
-      .order('company_name')
-
-    if (error) {
-      set({ error: error.message })
-      return
-    }
-
-    set({ workshops: data ?? [] })
-  },
-
-  createQuoteRequest: async (reqData) => {
-    set({ loading: true, error: null })
-
-    try {
-      const profile = useAuthStore.getState().profile
-      if (!profile) throw new Error('No autenticado')
-
-      // Insert quote request. user_id = UUID del perfil (no el Clerk id): el facade valida el insert
-      // con insertColumn 'user_id' === auth.profileId, así que solo el solicitante puede crearla.
-      const { data: request, error } = await supabase
-        .from('quote_requests')
-        .insert({
-          user_id: profile.id,
-          target_user_id: reqData.target_user_id,
-          car_model: reqData.car_model,
-          car_year: reqData.car_year,
-          service_type: reqData.service_type,
-          specifications: reqData.specifications,
-        } as any)
-        .select()
-        .single()
-
-      if (error) throw error
-
-      // Datos para el email: el destinatario se consulta; el remitente ya lo tenemos en el perfil.
-      const targetRes = await supabase
-        .from('user_profiles')
-        .select('email, full_name, company_name')
-        .eq('id', reqData.target_user_id)
-        .single()
-
-      if (targetRes.data?.email) {
-        // Send email notification via Edge Function
-        await supabase.functions.invoke('send-quote-email', {
-          body: {
-            to_email: targetRes.data.email,
-            to_name: targetRes.data.company_name || targetRes.data.full_name,
-            from_name: profile.full_name ?? 'Usuario',
-            car_model: reqData.car_model,
-            car_year: reqData.car_year,
-            service_type: reqData.service_type,
-            specifications: reqData.specifications,
-            quote_request_id: request.id,
-          },
-        })
-      }
-
-      await get().fetchSentRequests()
-      set({ loading: false })
-    } catch (err: any) {
-      set({ error: err.message, loading: false })
-      throw err
-    }
-  },
-
   fetchSentRequests: async () => {
-    const profileId = currentProfileId()
-    if (!profileId) return
-
-    const { data, error } = await supabase
-      .from('quote_requests')
-      .select('*')
-      .eq('user_id', profileId)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      set({ error: error.message })
-      return
-    }
-
-    let rows = await attachRelated((data as any[]) ?? [], [
-      { table: 'user_profiles', fk: 'target_user_id', as: 'target', columns: 'id, full_name, company_name, email' },
-    ])
-    rows = await attachChildren(rows, { table: 'quotes', parentKey: 'id', childFk: 'quote_request_id', as: 'quotes' })
-    set({ sentRequests: rows as any })
+    try { set({ sentRequests: (await quotesApi.list('client')).items }) } catch { /* el panel sigue sin este bloque */ }
   },
-
   fetchReceivedRequests: async () => {
-    const profileId = currentProfileId()
-    if (!profileId) return
-
-    const { data, error } = await supabase
-      .from('quote_requests')
-      .select('*')
-      .eq('target_user_id', profileId)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      set({ error: error.message })
-      return
-    }
-
-    let rows = await attachRelated((data as any[]) ?? [], [
-      { table: 'user_profiles', fk: 'user_id', as: 'sender', columns: 'id, full_name, company_name, email' },
-    ])
-    rows = await attachChildren(rows, { table: 'quotes', parentKey: 'id', childFk: 'quote_request_id', as: 'quotes' })
-    set({ receivedRequests: rows as any })
-  },
-
-  respondToQuote: async (data) => {
-    set({ loading: true, error: null })
-
-    try {
-      const profile = useAuthStore.getState().profile
-      if (!profile) throw new Error('No autenticado')
-
-      const { error: quoteError } = await supabase
-        .from('quotes')
-        .insert({
-          quote_request_id: data.quote_request_id,
-          quoted_by: profile.id,
-          price: data.price,
-          notes: data.notes,
-          valid_until: data.valid_until,
-        } as any)
-
-      if (quoteError) throw quoteError
-
-      // Update request status to quoted
-      const { error: updateError } = await supabase
-        .from('quote_requests')
-        .update({ status: 'quoted', updated_at: new Date().toISOString() } as any)
-        .eq('id', data.quote_request_id)
-
-      if (updateError) throw updateError
-
-      await get().fetchReceivedRequests()
-      set({ loading: false })
-    } catch (err: any) {
-      set({ error: err.message, loading: false })
-      throw err
-    }
-  },
-
-  updateRequestStatus: async (requestId, status) => {
-    const { error } = await supabase
-      .from('quote_requests')
-      .update({ status, updated_at: new Date().toISOString() } as any)
-      .eq('id', requestId)
-
-    if (error) {
-      set({ error: error.message })
-      return
-    }
-
-    await Promise.all([get().fetchSentRequests(), get().fetchReceivedRequests()])
+    try { set({ receivedRequests: (await quotesApi.list('workshop')).items }) } catch { /* idem */ }
   },
 }))

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../stores/authStore'
 import { LogOut, Menu, X } from 'lucide-react'
+import NotificationsBell from './NotificationsBell'
 
 export default function Layout() {
   const { user, profile, signOut } = useAuthStore()
@@ -55,6 +56,7 @@ export default function Layout() {
     ...(profile?.user_type === 'workshop' || profile?.user_type === 'professional'
       ? [{ to: '/panel', label: 'Panel' }]
       : []),
+    ...(profile?.is_collaborator || profile?.is_admin ? [{ to: '/colaborar', label: 'Colaborar' }] : []),
     ...(profile?.is_admin ? [{ to: '/admin', label: 'Admin' }] : []),
   ]
 
@@ -99,6 +101,9 @@ export default function Layout() {
             ExhaustMarket
           </Link>
 
+          {/* Derecha: menú de escritorio + avisos + botón de menú móvil (un solo bloque para que
+              «space-between» deje el logo a la izquierda y todo esto a la derecha) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
           {/* Desktop Nav Links */}
           <div
             style={{
@@ -219,6 +224,9 @@ export default function Layout() {
             )}
           </div>
 
+          {/* Avisos (campana): a la derecha en escritorio, junto al menú en móvil */}
+          {user && <NotificationsBell />}
+
           {/* Mobile Hamburger */}
           <button
             className="mobile-menu-btn"
@@ -235,6 +243,7 @@ export default function Layout() {
           >
             {mobileMenuOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
+          </div>
         </div>
 
         {/* Mobile Dropdown Menu */}

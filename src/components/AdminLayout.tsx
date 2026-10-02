@@ -1,39 +1,65 @@
+import { useEffect, useState } from 'react'
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom'
-import { Layers, LogOut, ArrowLeft, Factory, BookOpen, LayoutDashboard, Users, CreditCard, Car, Wrench, Tag, ClipboardCheck, ShieldCheck } from 'lucide-react'
+import { Layers, LogOut, ArrowLeft, Factory, BookOpen, LayoutDashboard, Users, CreditCard, Car, Wrench, Tag, ShieldCheck, Inbox, FileText, Box, Database, KeyRound, CalendarCheck } from 'lucide-react'
 import { useAuthStore } from '../stores/authStore'
+import { adminFetch } from '../lib/adminApi'
+
+interface NavLink { to: string; label: string; icon: any; exact?: boolean; badge?: boolean; hint?: string }
 
 export default function AdminLayout() {
   const { signOut } = useAuthStore()
   const location = useLocation()
   const navigate = useNavigate()
+  // Pendientes de revisión (publicación + envíos de colaboradores) para el badge del menú.
+  const [pending, setPending] = useState(0)
+  useEffect(() => {
+    const load = () => adminFetch<{ publicacion: number; envios: number }>('/api/review', { query: { op: 'counts' } })
+      .then((c) => setPending((c.publicacion ?? 0) + (c.envios ?? 0))).catch(() => {})
+    load()
+    window.addEventListener('em-review-changed', load)
+    return () => window.removeEventListener('em-review-changed', load)
+  }, [location.pathname])
 
-  const navSections = [
+  // Menú agrupado por TAREA (no por versión técnica v1/v2): primero lo que hay que revisar,
+  // luego el catálogo, el contenido editorial y por último usuarios/negocio. El Panel QA y los
+  // Envíos de colaboradores viven ahora dentro de la Bandeja de revisión (pestañas).
+  const navSections: { title: string; links: NavLink[] }[] = [
     {
-      title: 'General',
+      title: 'Inicio',
       links: [
-        { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, exact: true },
+        { to: '/admin', label: 'Resumen', icon: LayoutDashboard, exact: true },
+        { to: '/admin/revision', label: 'Bandeja de revisión', icon: Inbox, badge: true },
       ],
     },
     {
-      title: 'Catálogo (v1)',
+      title: 'Catálogo',
       links: [
-        { to: '/admin/esquemas', label: 'Esquemas (legacy)', icon: Layers },
-        { to: '/admin/marcas', label: 'Marcas aftermarket', icon: Factory },
-        { to: '/admin/articulos', label: 'Artículos / tutoriales', icon: BookOpen },
-      ],
-    },
-    {
-      title: 'Datos técnicos (v2)',
-      links: [
-        { to: '/admin/data/vehiculos', label: 'Vehículos', icon: Car },
-        { to: '/admin/data/piezas', label: 'Piezas OEM', icon: Wrench },
+        { to: '/admin/esquemas', label: 'Esquemas', icon: Layers },
+        { to: '/admin/data/vehiculos', label: 'Vehículos y motores', icon: Car },
+        { to: '/admin/data/piezas', label: 'Componentes OEM', icon: Wrench },
         { to: '/admin/data/productos', label: 'Productos aftermarket', icon: Tag },
-        { to: '/admin/qa', label: 'Panel QA', icon: ClipboardCheck },
+        { to: '/admin/marcas', label: 'Marcas aftermarket', icon: Factory },
       ],
     },
     {
-      title: 'CRM',
+      title: 'Contenido',
       links: [
+        { to: '/admin/articulos', label: 'Guías y artículos', icon: BookOpen },
+        { to: '/manuals', label: 'Manuales', icon: FileText, hint: 'se gestionan en la web' },
+        { to: '/designs', label: 'Diseños 3D', icon: Box, hint: 'se gestionan en la web' },
+      ],
+    },
+    {
+      title: 'Datos e integraciones',
+      links: [
+        { to: '/admin/datos', label: 'Importar / exportar', icon: Database },
+        { to: '/admin/api', label: 'API y webhooks', icon: KeyRound },
+      ],
+    },
+    {
+      title: 'Usuarios y negocio',
+      links: [
+        { to: '/admin/visitas', label: 'Visitas y reclamaciones', icon: CalendarCheck },
         { to: '/admin/usuarios', label: 'Usuarios', icon: Users },
         { to: '/admin/kyc', label: 'Verificaciones KYC', icon: ShieldCheck },
         { to: '/admin/suscripciones', label: 'Suscripciones', icon: CreditCard },
@@ -115,11 +141,12 @@ export default function AdminLayout() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                 {section.links.map((link) => {
                   const Icon = link.icon
-                  const active = isActive(link.to, (link as any).exact)
+                  const active = isActive(link.to, link.exact)
                   return (
                     <Link
                       key={link.to}
                       to={link.to}
+                      title={link.hint}
                       style={{
                         textDecoration: 'none',
                         color: active ? '#FFFFFF' : 'rgba(255,255,255,0.75)',
@@ -135,7 +162,12 @@ export default function AdminLayout() {
                       }}
                     >
                       <Icon size={14} />
-                      {link.label}
+                      <span style={{ flex: 1 }}>{link.label}</span>
+                      {link.badge && pending > 0 && (
+                        <span style={{ background: '#FF9500', color: '#fff', borderRadius: 10, padding: '1px 7px', fontSize: 10.5, fontWeight: 700 }}>
+                          {pending > 99 ? '99+' : pending}
+                        </span>
+                      )}
                     </Link>
                   )
                 })}

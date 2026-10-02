@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { uploadTutorialFile } from '../lib/storage'
+import { deleteTutorialFile } from '../lib/storage'
 import { useAuthStore } from '../stores/authStore'
 import { canDownloadManual } from '../lib/contentTypes'
-import { FileText, Download, Search, Upload, Plus, X, ChevronRight, Lock } from 'lucide-react'
+import FileManagerField from '../components/admin/FileManagerField'
+import { FileText, Download, Search, Plus, X, ChevronRight, Lock, Pencil, Trash2 } from 'lucide-react'
 
 interface Manual {
   id: string
@@ -50,46 +51,84 @@ export default function ManualsPage() {
   const navigate = useNavigate()
   // Descarga por manual: Taller+ mínimo y respeta required_tier (helper canDownloadManual).
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState({
     title: '', description: '', car_brand: '', car_model: '',
     manual_type: 'car_manual', required_tier: 'standard',
   })
-  const [file, setFile] = useState<File | null>(null)
+  const [fileUrl, setFileUrl] = useState<string | null>(null)
+  const [fileSize, setFileSize] = useState<number>(0)
+  const [fileBusy, setFileBusy] = useState(false)
+  const savingRef = useRef(false) // guarda síncrona anti doble-clic (evita duplicados)
   const [uploading, setUploading] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
 
-  async function handleUpload(e: React.FormEvent) {
+  function resetForm() {
+    setForm({ title: '', description: '', car_brand: '', car_model: '', manual_type: 'car_manual', required_tier: 'standard' })
+    setFileUrl(null); setFileSize(0); setEditingId(null); setFormError(null)
+  }
+
+  function openCreate() {
+    resetForm(); setShowForm(true)
+  }
+
+  function openEdit(m: Manual) {
+    setForm({
+      title: m.title, description: m.description ?? '', car_brand: m.car_brand, car_model: m.car_model,
+      manual_type: m.manual_type, required_tier: m.required_tier ?? 'standard',
+    })
+    setFileUrl(m.file_url); setFileSize(m.file_size ?? 0); setEditingId(m.id); setFormError(null)
+    setShowForm(true)
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 0)
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setFormError(null)
-    if (!file) { setFormError('Selecciona un archivo PDF'); return }
+    if (savingRef.current) return
     if (!form.title.trim() || !form.car_brand.trim() || !form.car_model.trim()) {
       setFormError('Título, marca y modelo son obligatorios'); return
     }
-    if (file.size > 50 * 1024 * 1024) { setFormError('Máximo 50 MB'); return }
+    if (!fileUrl) { setFormError('Sube el PDF del manual'); return }
+    if (fileBusy) { setFormError('Espera a que termine la subida del archivo'); return }
+    savingRef.current = true
     setUploading(true)
     try {
-      const fileUrl = await uploadTutorialFile(file, 'manuals')
-      const { error: insErr } = await supabase.from('manuals').insert({
+      const payload = {
         title: form.title.trim(),
         description: form.description.trim() || form.title.trim(),
         car_brand: form.car_brand.trim(),
         car_model: form.car_model.trim(),
         manual_type: form.manual_type,
         file_url: fileUrl,
-        file_size: file.size,
+        file_size: fileSize,
         required_tier: form.required_tier,
-        uploaded_by: profileId,
-      })
-      if (insErr) throw new Error(insErr.message)
-      setForm({ title: '', description: '', car_brand: '', car_model: '', manual_type: 'car_manual', required_tier: 'standard' })
-      setFile(null)
+      }
+      if (editingId) {
+        const { error: upErr } = await supabase.from('manuals').update(payload as any).eq('id', editingId)
+        if (upErr) throw new Error(upErr.message)
+      } else {
+        const { error: insErr } = await supabase.from('manuals').insert({ ...payload, uploaded_by: profileId } as any)
+        if (insErr) throw new Error(insErr.message)
+      }
+      resetForm()
       setShowForm(false)
       await fetchManuals()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Error al subir el manual')
+      setFormError(err instanceof Error ? err.message : 'Error al guardar el manual')
     } finally {
+      savingRef.current = false
       setUploading(false)
     }
+  }
+
+  async function handleDelete(m: Manual) {
+    if (!window.confirm(`¿Borrar el manual "${m.title}"? Esta acción no se puede deshacer.`)) return
+    const { error: delErr } = await supabase.from('manuals').delete().eq('id', m.id)
+    if (delErr) { setError(delErr.message); return }
+    if (m.file_url) deleteTutorialFile(m.file_url).catch(() => { /* huérfano tolerable */ })
+    if (selected?.id === m.id) setSelected(null)
+    await fetchManuals()
   }
 
   useEffect(() => {
@@ -175,7 +214,7 @@ export default function ManualsPage() {
         <div style={{ maxWidth: '600px', margin: '0 auto 24px' }}>
           {!showForm ? (
             <button
-              onClick={() => setShowForm(true)}
+              onClick={openCreate}
               className="btn-pill btn-primary"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
@@ -183,12 +222,12 @@ export default function ManualsPage() {
             </button>
           ) : (
             <form
-              onSubmit={handleUpload}
+              onSubmit={handleSubmit}
               style={{ border: '1px solid #E5E5EA', borderRadius: 14, padding: 20, background: '#FFFFFF', textAlign: 'left' }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <strong style={{ fontSize: 15 }}>Nuevo manual</strong>
-                <button type="button" onClick={() => setShowForm(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#86868B' }}>
+                <strong style={{ fontSize: 15 }}>{editingId ? 'Editar manual' : 'Nuevo manual'}</strong>
+                <button type="button" onClick={() => { setShowForm(false); resetForm() }} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#86868B' }}>
                   <X size={18} />
                 </button>
               </div>
@@ -210,20 +249,28 @@ export default function ManualsPage() {
                 <select className="input-apple" value={form.required_tier}
                   onChange={(e) => setForm({ ...form, required_tier: e.target.value })}>
                   <option value="standard">Acceso libre</option>
+                  <option value="workshop">Taller</option>
                   <option value="professional">Profesional</option>
                   <option value="premium">Premium</option>
                 </select>
               </div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px', border: '2px dashed #D2D2D7', borderRadius: 10, cursor: 'pointer', marginBottom: 12, fontSize: 13, color: '#6E6E73' }}>
-                <Upload size={15} />
-                {file ? file.name : 'Seleccionar PDF (máx. 50 MB)'}
-                <input type="file" accept=".pdf,application/pdf" style={{ display: 'none' }}
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-              </label>
+              <div style={{ marginBottom: 12 }}>
+                <FileManagerField
+                  label="Archivo PDF *"
+                  value={fileUrl}
+                  onChange={(url, meta) => { setFileUrl(url); if (meta) setFileSize(meta.size) }}
+                  kind="file"
+                  bucket="tutorial-files"
+                  prefix="manuals"
+                  accept=".pdf,application/pdf"
+                  maxSizeMB={50}
+                  onBusyChange={setFileBusy}
+                />
+              </div>
               {formError && <div style={{ color: '#D70015', fontSize: 13, marginBottom: 10 }}>{formError}</div>}
-              <button type="submit" disabled={uploading} className="btn-pill btn-primary"
+              <button type="submit" disabled={uploading || fileBusy} className="btn-pill btn-primary"
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {uploading ? 'Subiendo…' : 'Guardar manual'}
+                {uploading ? 'Guardando…' : (editingId ? 'Guardar cambios' : 'Guardar manual')}
               </button>
             </form>
           )}
@@ -314,28 +361,42 @@ export default function ManualsPage() {
       ) : (
         <div style={{ maxWidth: 820, margin: '0 auto', border: '1px solid #F2F2F7', borderRadius: 16, overflow: 'hidden', background: '#FFFFFF' }}>
           {filteredManuals.map((manual, i) => (
-            <button key={manual.id} onClick={() => setSelected(manual)}
+            <div key={manual.id}
               style={{
-                display: 'flex', alignItems: 'center', gap: 14, width: '100%', padding: '13px 18px',
-                border: 'none', borderTop: i === 0 ? 'none' : '1px solid #F2F2F7',
-                cursor: 'pointer', background: 'transparent', textAlign: 'left', transition: 'background .15s ease',
+                display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '13px 18px',
+                borderTop: i === 0 ? 'none' : '1px solid #F2F2F7', transition: 'background .15s ease',
               }}
               onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#FAFAFA' }}
               onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}>
-              <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: '#F5F5F7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <FileText size={16} style={{ color: '#86868B' }} />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ fontSize: 15, fontWeight: 600, color: '#1D1D1F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{manual.title}</span>
-                  <span className="badge badge-green" style={{ flexShrink: 0 }}>{manualTypeLabels[manual.manual_type]}</span>
+              <div onClick={() => setSelected(manual)}
+                style={{ display: 'flex', alignItems: 'center', gap: 14, flex: 1, minWidth: 0, cursor: 'pointer' }}>
+                <div style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: '#F5F5F7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <FileText size={16} style={{ color: '#86868B' }} />
                 </div>
-                <div style={{ fontSize: 13, color: '#86868B', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {manual.car_brand} {manual.car_model} · {formatFileSize(manual.file_size)}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 15, fontWeight: 600, color: '#1D1D1F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{manual.title}</span>
+                    <span className="badge badge-green" style={{ flexShrink: 0 }}>{manualTypeLabels[manual.manual_type]}</span>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#86868B', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {manual.car_brand} {manual.car_model} · {formatFileSize(manual.file_size)}
+                  </div>
                 </div>
               </div>
-              <ChevronRight size={18} style={{ color: '#C7C7CC', flexShrink: 0 }} />
-            </button>
+              {isAdmin && (
+                <>
+                  <button onClick={() => openEdit(manual)} title="Editar" aria-label="Editar"
+                    style={{ border: '1px solid #E5E5EA', background: '#fff', borderRadius: 8, padding: 7, cursor: 'pointer', color: '#0071E3', display: 'inline-flex', flexShrink: 0 }}>
+                    <Pencil size={14} />
+                  </button>
+                  <button onClick={() => handleDelete(manual)} title="Borrar" aria-label="Borrar"
+                    style={{ border: '1px solid #FFD5D2', background: '#fff', borderRadius: 8, padding: 7, cursor: 'pointer', color: '#FF3B30', display: 'inline-flex', flexShrink: 0 }}>
+                    <Trash2 size={14} />
+                  </button>
+                </>
+              )}
+              <ChevronRight size={18} style={{ color: '#C7C7CC', flexShrink: 0 }} onClick={() => setSelected(manual)} />
+            </div>
           ))}
         </div>
       )}

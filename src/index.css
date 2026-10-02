@@ -124,10 +124,17 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease, transform 0.2s ease;
   border: none;
   padding: 12px 24px;
+  gap: 6px;
 }
 
 .btn-pill:active {
   transform: scale(0.98);
+}
+
+.btn-pill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .btn-primary {
@@ -429,4 +436,13 @@ input, textarea, select {
   .detail-layout {
     grid-template-columns: 1fr !important;
   }
+}
+
+/* ─── Esquemas: barra de pills sticky con scroll horizontal (móvil) ─── */
+.schema-pills-scroll {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.schema-pills-scroll::-webkit-scrollbar {
+  display: none;
 }

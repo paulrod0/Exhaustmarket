@@ -99,13 +99,15 @@ export function canSeeWorkshopData(userTier: string | null | undefined, isAdmin 
   return isAdmin || rankOf(userTier) >= 1 // Taller+
 }
 
-/** ¿Puede descargar este manual? Taller+ mínimo (dossier) y además respeta required_tier. */
+/** ¿Puede descargar este manual? Se respeta el required_tier del manual ('standard' = libre). */
 export function canDownloadManual(
   requiredTier: string | null | undefined,
   userTier: string | null | undefined,
   isAdmin = false,
 ): boolean {
-  const need = Math.max(1, rankOf(requiredTier ?? 'standard'))
+  // Espejo EXACTO de redactManual en api/db.ts: se respeta el required_tier tal cual.
+  // 'standard' = descarga libre; workshop/professional/premium = ese tier mínimo.
+  const need = rankOf(requiredTier ?? 'standard')
   return isAdmin || rankOf(userTier) >= need
 }
 

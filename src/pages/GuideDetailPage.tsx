@@ -55,16 +55,26 @@ export default function GuideDetailPage() {
       const art = data as unknown as Article
       setArticle(art)
 
-      // Esquemas asociados a este artículo
+      // Esquemas asociados a este artículo (inverso). El facade NO soporta selects
+      // anidados (`exhaust_schemas(...)` volvía vacío): leer schema_id y traer las filas
+      // con `.in('id', ...)` en un 2º paso.
       const { data: linksData } = await supabase
         .from('schema_article_links' as any)
-        .select('exhaust_schemas(id, brand, model, year, cover_url, color, is_active)')
+        .select('schema_id')
         .eq('article_id', art.id)
-      if (!cancelled) {
-        const schemas = (linksData ?? [])
-          .map((row: any) => row.exhaust_schemas)
-          .filter((s: any) => s != null && s.is_active) as LinkedSchema[]
-        setLinkedSchemas(schemas)
+      const schemaIds = [...new Set(((linksData ?? []) as any[]).map((r) => r.schema_id).filter(Boolean))]
+      if (schemaIds.length > 0) {
+        const { data: schemasData } = await supabase
+          .from('exhaust_schemas' as any)
+          .select('id, brand, model, year, cover_url, color, is_active')
+          .in('id', schemaIds as string[])
+        if (!cancelled) {
+          const schemas = ((schemasData ?? []) as any[])
+            .filter((s) => s != null && s.is_active) as LinkedSchema[]
+          setLinkedSchemas(schemas)
+        }
+      } else if (!cancelled) {
+        setLinkedSchemas([])
       }
 
       // Artículos relacionados por tags compartidos o misma categoría
