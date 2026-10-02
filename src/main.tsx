@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ClerkProvider } from '@clerk/clerk-react'
 import App from './App'
 import AuthBridge from './components/AuthBridge'
+import EnvBanner from './components/EnvBanner'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -26,6 +27,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <AuthBridge />
       <QueryClientProvider client={queryClient}>
         <App />
+        <EnvBanner />
       </QueryClientProvider>
     </ClerkProvider>
   </React.StrictMode>,
