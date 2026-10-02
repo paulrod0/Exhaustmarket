@@ -597,6 +597,9 @@ async function sendEmails(pool: Pool, notes: Notif[]) {
   try {
     const users = new Map(((await pool.query(`SELECT id, email, full_name, company_name FROM user_profiles WHERE id = ANY($1)`, [[...new Set(list.map((n) => n.user_id))]])).rows as Row[]).map((u) => [u.id, u]))
     const origin = process.env.PUBLIC_ORIGIN ?? 'https://exhaustmarket.vercel.app'
+    // Remitente configurable. Por defecto el de pruebas de Resend (el mismo que usa la app móvil):
+    // solo entrega al dueño de la cuenta de Resend. Con un dominio verificado → EMAIL_FROM en Vercel.
+    const from = process.env.EMAIL_FROM || 'ExhaustMarket <onboarding@resend.dev>'
     await Promise.allSettled(list.map(async (n) => {
       const u = users.get(n.user_id)
       if (!u?.email) return
@@ -604,11 +607,12 @@ async function sendEmails(pool: Pool, notes: Notif[]) {
         <h2 style="font-size:20px">${esc(n.title)}</h2><p style="font-size:15px;line-height:1.5">${esc(n.body)}</p>
         <p><a href="${origin}${n.link}" style="background:#0071E3;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none">Ver en ExhaustMarket</a></p>
         <p style="font-size:12px;color:#86868B">Recibes este aviso por tu actividad en ExhaustMarket.</p></div>`
-      await fetch('https://api.resend.com/emails', {
+      const r = await fetch('https://api.resend.com/emails', {
         method: 'POST', signal: AbortSignal.timeout(6000),
         headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ from: 'ExhaustMarket <noreply@exhaustmarket.com>', to: u.email, subject: n.title, html }),
+        body: JSON.stringify({ from, to: u.email, subject: n.title, html }),
       })
+      if (!r.ok) console.error('quotes email', r.status, (await r.text().catch(() => '')).slice(0, 300))
     }))
   } catch (e) { console.error('quotes email', e) }
 }
